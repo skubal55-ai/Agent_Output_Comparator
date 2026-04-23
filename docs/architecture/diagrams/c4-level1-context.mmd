@@ -1,0 +1,9 @@
+flowchart TB
+    Engineer([Engineer])
+    AgentOutputComparator[Agent Output Comparator]
+    GitHubCopilotCLI[GitHub Copilot CLI]
+    OpenCode[OpenCode]
+    
+    Engineer --> AgentOutputComparator
+    AgentOutputComparator --> GitHubCopilotCLI
+    AgentOutputComparator --> OpenCode

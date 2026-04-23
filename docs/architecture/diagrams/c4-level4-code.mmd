@@ -1,0 +1,29 @@
+classDiagram
+    class Agent {
+        <<interface>>
+        +run(prompt, repo_path)
+    }
+    class Output {
+        +String filePath
+        +String content
+    }
+    class ComparisonResult {
+        +Agent agent1
+        +Agent agent2
+        +List~Output~ diffs
+        +int score
+    }
+    class AgentRunner {
+        +Agent agent
+        +Output runAgent(prompt, repo_path)
+    }
+    class PersistenceManager {
+        +void saveResult(ComparisonResult)
+        +List~ComparisonResult~ loadResults()
+    }
+    
+    AgentRunner o-- Agent
+    AgentRunner --> Output
+    ComparisonResult o-- Agent
+    ComparisonResult --> Output
+    PersistenceManager --> ComparisonResult

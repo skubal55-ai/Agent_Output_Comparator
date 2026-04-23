@@ -1,0 +1,9 @@
+flowchart TB
+    subgraph Frontend
+        WebApp[Single Page HTML App]
+    end
+    subgraph Backend
+        FlaskApp[Flask Application]
+    end
+    
+    WebApp --> FlaskApp

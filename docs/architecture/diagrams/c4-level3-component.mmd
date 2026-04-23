@@ -1,0 +1,11 @@
+flowchart TB
+    subgraph Flask Application
+        WebServer[Web Server]
+        AgentRunner[Agent Runner]
+        Comparator[Comparator Logic]
+        Persistence[Persistence Manager]
+    end
+    
+    WebServer --> AgentRunner
+    AgentRunner --> Comparator
+    Comparator --> Persistence

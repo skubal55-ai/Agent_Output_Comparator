@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agent Output Comparator</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3250;
+    --accent: #7c6af7;
+    --accent2: #00c9a7;
+    --copilot: #58a6ff;
+    --opencode: #f97f51;
+    --text: #e2e8f0;
+    --muted: #8892a4;
+    --danger: #f87171;
+    --success: #34d399;
+    --warning: #fbbf24;
+    --radius: 12px;
+    --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.6; }
+
+  /* ── Header ── */
+  header {
+    background: linear-gradient(135deg, #1a1d27 0%, #12162b 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 32px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  header .logo { font-size: 1.5rem; font-weight: 800; background: linear-gradient(90deg, var(--copilot), var(--accent), var(--opencode)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  header .subtitle { color: var(--muted); font-size: 0.82rem; margin-top: 2px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); display: inline-block; margin-right: 6px; transition: background 0.4s; }
+  .status-dot.connected { background: var(--success); }
+  #server-status { font-size: 0.78rem; color: var(--muted); margin-left: auto; white-space: nowrap; }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 28px 32px; }
+
+  /* ── Cards ── */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px 24px; margin-bottom: 20px; box-shadow: var(--shadow); }
+  .card-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+
+  /* ── Form ── */
+  label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
+  input[type="text"], textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.88rem; padding: 9px 13px; outline: none; transition: border-color 0.2s; font-family: inherit; }
+  input[type="text"]:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 76px; }
+
+  /* ── Tabs (load method) ── */
+  .tab-bar { display: flex; gap: 0; margin-bottom: 18px; background: var(--surface2); border-radius: 8px; padding: 3px; width: fit-content; }
+  .tab-btn { padding: 7px 18px; border-radius: 6px; font-size: 0.82rem; font-weight: 600; cursor: pointer; border: none; background: transparent; color: var(--muted); transition: all 0.2s; }
+  .tab-btn.active { background: var(--accent); color: #fff; }
+  .tab-btn:hover:not(.active) { color: var(--text); }
+
+  /* ── Drag-drop zone ── */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s;
+    background: var(--surface2);
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(124,106,247,0.06); }
+  .drop-zone .drop-icon { font-size: 2.2rem; margin-bottom: 8px; }
+  .drop-zone .drop-label { font-size: 0.9rem; color: var(--muted); }
+  .drop-zone .drop-label span { color: var(--accent); font-weight: 600; cursor: pointer; }
+  .drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+  .drop-zone.loaded { border-color: var(--success); background: rgba(52,211,153,0.05); }
+  .drop-zone.loaded .drop-icon::after { content: ' ✅'; }
+
+  /* ── Path row ── */
+  .path-row { display: flex; gap: 10px; align-items: flex-end; }
+  .path-row > input { flex: 1; }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 18px; border-radius: 8px; font-size: 0.87rem; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; white-space: nowrap; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #6a59e0; transform: translateY(-1px); }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover:not(:disabled) { border-color: var(--accent); }
+  .btn-success { background: rgba(52,211,153,0.15); color: var(--success); border: 1px solid rgba(52,211,153,0.3); }
+  .btn-success:hover:not(:disabled) { background: rgba(52,211,153,0.25); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+  .btn-run { background: linear-gradient(135deg, var(--copilot), var(--opencode)); color: #fff; font-size: 0.97rem; padding: 12px 32px; border-radius: 10px; width: 100%; justify-content: center; margin-top: 10px; }
+  .btn-run:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+
+  /* ── File info bar ── */
+  .file-info-bar { display: none; margin-top: 12px; padding: 10px 14px; background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.25); border-radius: 8px; font-size: 0.82rem; color: var(--success); align-items: center; gap: 10px; }
+  .file-info-bar .fi-name { font-weight: 700; }
+  .file-info-bar .fi-size { color: var(--muted); }
+  .file-info-bar .fi-clear { margin-left: auto; color: var(--muted); cursor: pointer; font-size: 1rem; }
+  .file-info-bar .fi-clear:hover { color: var(--danger); }
+
+  /* ── Agent preview ── */
+  .agent-preview { display: none; background: #0d0f1a; border-radius: 8px; padding: 12px 14px; font-family: 'Fira Code', monospace; font-size: 0.78rem; color: var(--muted); max-height: 160px; overflow-y: auto; margin-top: 12px; white-space: pre-wrap; word-break: break-word; border: 1px solid var(--border); }
+
+  /* ── Status msg ── */
+  .status-msg { margin-top: 9px; font-size: 0.8rem; min-height: 18px; }
+
+  /* ── Suggest prompts panel ── */
+  .suggest-bar { display: none; margin-top: 14px; }
+  .suggest-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .suggest-title { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .suggest-spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; display: none; }
+  .suggested-prompts { display: flex; flex-direction: column; gap: 8px; }
+  .suggested-prompt-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 14px; cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    font-size: 0.85rem; line-height: 1.5;
+  }
+  .suggested-prompt-item:hover { border-color: var(--accent); background: rgba(124,106,247,0.06); }
+  .suggested-prompt-item.added { border-color: var(--success); background: rgba(52,211,153,0.05); }
+  .suggested-prompt-item .spi-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+  .suggested-prompt-item .spi-text { flex: 1; }
+  .suggested-prompt-item .spi-add { flex-shrink: 0; font-size: 0.75rem; font-weight: 700; color: var(--accent); padding: 3px 9px; border-radius: 5px; background: rgba(124,106,247,0.15); }
+  .suggested-prompt-item.added .spi-add { color: var(--success); background: rgba(52,211,153,0.15); }
+  .suggest-domain-tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; background: rgba(124,106,247,0.15); color: var(--accent); font-weight: 600; }
+
+  /* ── Prompt chips ── */
+  .prompt-section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .prompt-count-badge { font-size: 0.7rem; background: var(--accent); color: #fff; border-radius: 10px; padding: 1px 7px; font-weight: 700; }
+  .prompt-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; min-height: 32px; }
+  .prompt-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 5px 12px; font-size: 0.8rem; color: var(--text); max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prompt-chip .remove { color: var(--muted); font-size: 1rem; line-height: 1; cursor: pointer; flex-shrink: 0; }
+  .prompt-chip .remove:hover { color: var(--danger); }
+  .add-prompt-row { display: flex; gap: 8px; }
+  .add-prompt-row input { flex: 1; }
+
+  /* ── Git repo panel ── */
+  .git-panel { margin-bottom: 16px; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .git-panel-header { display: flex; align-items: center; gap: 10px; padding: 11px 16px; cursor: pointer; user-select: none; font-size: 0.88rem; font-weight: 600; }
+  .git-panel-header:hover { background: rgba(124,106,247,0.05); }
+  .git-toggle-icon { margin-left: auto; font-size: 0.75rem; color: var(--muted); transition: transform 0.2s; }
+  .git-panel.open .git-toggle-icon { transform: rotate(180deg); }
+  .git-panel-body { display: none; padding: 14px 16px; border-top: 1px solid var(--border); }
+  .git-panel.open .git-panel-body { display: block; }
+  .git-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  @media (max-width: 700px) { .git-fields { grid-template-columns: 1fr; } }
+  .git-field { display: flex; flex-direction: column; gap: 4px; }
+  .git-field label { font-size: 0.78rem; color: var(--muted); font-weight: 500; }
+  .git-field input { background: var(--surface); border: 1px solid var(--border); border-radius: 7px; color: var(--text); font-size: 0.85rem; padding: 8px 11px; outline: none; font-family: inherit; transition: border-color 0.2s; }
+  .git-field input:focus { border-color: var(--accent); }
+  .git-field input[type="password"] { letter-spacing: 0.12em; }
+  .git-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .git-status { font-size: 0.8rem; color: var(--muted); flex: 1; min-width: 0; }
+  .git-status.ok { color: var(--success); }
+  .git-status.err { color: var(--danger); }
+  .git-repo-info { display: none; margin-top: 12px; padding: 10px 14px; background: rgba(52,211,153,0.06); border: 1px solid rgba(52,211,153,0.2); border-radius: 8px; font-size: 0.8rem; }
+  .git-repo-info .ri-row { display: flex; gap: 6px; align-items: baseline; margin-bottom: 4px; }
+  .git-repo-info .ri-label { color: var(--muted); font-size: 0.75rem; width: 70px; flex-shrink: 0; }
+  .git-repo-info .ri-val { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .git-tree { margin-top: 8px; max-height: 100px; overflow-y: auto; font-family: 'Fira Code', monospace; font-size: 0.72rem; color: var(--muted); white-space: pre; background: #0d0f1a; border-radius: 6px; padding: 8px 10px; }
+  .git-context-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.3); border-radius: 20px; padding: 4px 12px; font-size: 0.78rem; color: var(--success); font-weight: 600; margin-bottom: 14px; }
+
+  /* ── Comparison grid ── */
+  .comparison-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  @media (max-width: 900px) { .comparison-grid { grid-template-columns: 1fr; } }
+
+  .tool-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+  .tool-header { padding: 13px 18px; display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 0.97rem; border-bottom: 1px solid var(--border); }
+  .tool-header.copilot { background: rgba(88,166,255,0.07); border-color: rgba(88,166,255,0.25); }
+  .tool-header.opencode { background: rgba(249,127,81,0.07); border-color: rgba(249,127,81,0.25); }
+  .tool-badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 20px; font-weight: 700; }
+  .copilot .tool-badge { background: rgba(88,166,255,0.2); color: var(--copilot); }
+  .opencode .tool-badge { background: rgba(249,127,81,0.2); color: var(--opencode); }
+  .latency-badge { margin-left: auto; font-size: 0.73rem; color: var(--muted); font-weight: 400; }
+
+  .tool-output { padding: 14px 18px; min-height: 150px; font-family: 'Fira Code', 'Cascadia Code', monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; color: var(--text); background: #0d0f1a; line-height: 1.7; max-height: 360px; overflow-y: auto; border-bottom: 1px solid var(--border); }
+  .tool-output.empty { color: var(--muted); font-style: italic; font-family: inherit; }
+  .tool-output.error-text { color: var(--danger); }
+
+  /* ── Generated files ── */
+  .files-section { padding: 12px 18px; border-bottom: 1px solid var(--border); display: none; }
+  .files-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; }
+  .file-list { display: flex; flex-direction: column; gap: 6px; }
+  .file-item { display: flex; align-items: center; gap: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; font-size: 0.8rem; }
+  .file-icon { font-size: 1rem; flex-shrink: 0; }
+  .file-name { flex: 1; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-ext { font-size: 0.68rem; background: rgba(124,106,247,0.15); color: var(--accent); padding: 1px 6px; border-radius: 4px; font-weight: 700; flex-shrink: 0; }
+  .file-actions { display: flex; gap: 5px; flex-shrink: 0; }
+  .file-btn { font-size: 0.72rem; padding: 3px 9px; border-radius: 5px; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-weight: 600; transition: all 0.15s; }
+  .file-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .file-btn.dl { border-color: rgba(52,211,153,0.3); color: var(--success); background: rgba(52,211,153,0.05); }
+  .file-btn.dl:hover { background: rgba(52,211,153,0.15); }
+
+  /* ── File preview modal ── */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); width: 100%; max-width: 860px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+  .modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .modal-title { font-weight: 700; font-size: 0.95rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modal-close { font-size: 1.4rem; cursor: pointer; color: var(--muted); line-height: 1; flex-shrink: 0; }
+  .modal-close:hover { color: var(--danger); }
+  .modal-body { flex: 1; overflow-y: auto; padding: 0; }
+  .modal-code { padding: 16px 20px; font-family: 'Fira Code', monospace; font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; color: var(--text); background: #0d0f1a; min-height: 200px; line-height: 1.7; }
+  .modal-diagram { display: none; padding: 16px 20px; background: #0d0f1a; min-height: 200px; }
+  .modal-diagram .mermaid-diagram-host { display: flex; justify-content: center; align-items: flex-start; overflow-x: auto; }
+  .modal-diagram .mermaid-diagram-host svg { max-width: 100%; height: auto; }
+  .modal-mmd-source { margin-top: 14px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 0.75rem; color: var(--muted); }
+  .modal-mmd-source summary { cursor: pointer; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .modal-mmd-source pre { margin: 0; padding: 10px 0 0; font-size: 0.72rem; white-space: pre-wrap; word-break: break-word; color: var(--muted); max-height: 200px; overflow-y: auto; }
+  .modal-footer { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ── Scores ── */
+  .score-section { padding: 14px 18px; }
+  .score-overall { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .score-ring { width: 54px; height: 54px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.05rem; font-weight: 800; flex-shrink: 0; border: 3px solid; }
+  .score-ring.copilot { border-color: var(--copilot); color: var(--copilot); }
+  .score-ring.opencode { border-color: var(--opencode); color: var(--opencode); }
+  .score-label { font-size: 0.78rem; color: var(--muted); }
+  .score-label strong { display: block; font-size: 0.92rem; color: var(--text); }
+  .metric-bars { display: flex; flex-direction: column; gap: 7px; }
+  .metric-row { display: flex; align-items: center; gap: 10px; font-size: 0.78rem; }
+  .metric-name { width: 78px; color: var(--muted); flex-shrink: 0; }
+  .metric-bar-bg { flex: 1; height: 5px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+  .metric-bar-fill { height: 100%; border-radius: 3px; transition: width 0.8s cubic-bezier(.4,0,.2,1); }
+  .bar-copilot { background: var(--copilot); }
+  .bar-opencode { background: var(--opencode); }
+  .metric-val { width: 28px; text-align: right; font-weight: 700; font-size: 0.8rem; }
+
+  /* ── Winner banner ── */
+  .winner-banner { display: none; background: linear-gradient(135deg, var(--surface2), var(--surface)); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 24px; margin-bottom: 20px; align-items: center; gap: 16px; }
+  .winner-banner .trophy { font-size: 1.9rem; }
+  .winner-banner strong { font-size: 1.1rem; }
+  .winner-banner .detail { color: var(--muted); font-size: 0.82rem; margin-top: 2px; }
+
+  /* ── History table ── */
+  .history-section { display: none; }
+  .history-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  .history-table th { text-align: left; padding: 8px 12px; color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .history-table td { padding: 9px 12px; border-bottom: 1px solid rgba(46,50,80,0.5); vertical-align: middle; }
+  .history-table tr:hover td { background: var(--surface2); cursor: pointer; }
+  .winner-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.68rem; font-weight: 700; }
+  .winner-copilot { background: rgba(88,166,255,0.15); color: var(--copilot); }
+  .winner-opencode { background: rgba(249,127,81,0.15); color: var(--opencode); }
+  .winner-tie { background: rgba(124,106,247,0.15); color: var(--accent); }
+
+  /* ── Prompt tabs ── */
+  .prompt-tab-bar { display: flex; flex-wrap: wrap; gap: 7px; }
+  .prompt-tab { padding: 6px 13px; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); transition: all 0.2s; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prompt-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* ── Loader ── */
+  .loader { display: none; flex-direction: column; align-items: center; justify-content: center; padding: 48px; gap: 14px; }
+  .spinner { width: 38px; height: 38px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loader-text { color: var(--muted); font-size: 0.88rem; }
+
+  /* ── Empty state ── */
+  .empty-state { text-align: center; padding: 56px 20px; color: var(--muted); }
+  .empty-state .big-icon { font-size: 2.8rem; margin-bottom: 10px; }
+  .empty-state p { font-size: 0.88rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">⚡ Agent Output Comparator</div>
+    <div class="subtitle">Copilot CLI vs OpenCode CLI — side-by-side scoring</div>
+  </div>
+  <div id="server-status">
+    <span class="status-dot" id="dot"></span>
+    <span id="status-text">Connecting…</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- ══ STEP 1: Load Agent .md ══ -->
+  <div class="card">
+    <div class="card-title">📄 Step 1 — Load Your Agent .md File</div>
+
+    <!-- Tab switcher -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchLoadTab('upload')" id="tab-upload">⬆ Upload File</button>
+      <button class="tab-btn" onclick="switchLoadTab('path')" id="tab-path">📁 File Path</button>
+    </div>
+
+    <!-- Upload panel -->
+    <div id="panel-upload">
+      <div class="drop-zone" id="drop-zone" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <input type="file" accept=".md" onchange="onFileSelect(event)" id="file-input" />
+        <div class="drop-icon">📂</div>
+        <div class="drop-label">Drag & drop your <strong>.md</strong> file here, or <span onclick="document.getElementById('file-input').click()">browse</span></div>
+        <div style="font-size:0.75rem; color:var(--muted); margin-top:6px;">Accepts .md files only</div>
+      </div>
+    </div>
+
+    <!-- File path panel -->
+    <div id="panel-path" style="display:none;">
+      <label for="md-path">Full path to your agent .md file</label>
+      <div class="path-row">
+        <input type="text" id="md-path" placeholder="e.g. /Users/you/agents/my-agent.md" />
+        <button class="btn btn-secondary" onclick="loadMdFromPath()">Load</button>
+      </div>
+    </div>
+
+    <!-- File info bar (shown after load) -->
+    <div class="file-info-bar" id="file-info-bar">
+      <span>✅</span>
+      <span class="fi-name" id="fi-name"></span>
+      <span class="fi-size" id="fi-size"></span>
+      <span class="fi-clear" onclick="clearFile()" title="Remove file">✕</span>
+    </div>
+
+    <div class="status-msg" id="md-status"></div>
+    <div class="agent-preview" id="agent-preview"></div>
+  </div>
+
+  <!-- ══ STEP 2: Prompts ══ -->
+  <div class="card">
+    <div class="prompt-section-header">
+      <div class="card-title" style="margin-bottom:0;">💬 Step 2 — Test Prompts</div>
+      <span class="prompt-count-badge" id="prompt-count">0</span>
+      <button class="btn btn-success" id="suggest-btn" onclick="suggestPrompts()" disabled style="margin-left:auto; font-size:0.8rem; padding:6px 14px;">
+        ✨ Suggest Prompts
+      </button>
+    </div>
+
+    <!-- Git repo panel -->
+    <div class="git-panel" id="git-panel">
+      <div class="git-panel-header" onclick="toggleGitPanel()">
+        <span>🔗</span>
+        <span>Attach a Git Repository <span style="font-size:0.73rem;color:var(--muted);font-weight:400;">(optional — passes repo code as context)</span></span>
+        <span class="git-toggle-icon" id="git-toggle-icon">▼</span>
+      </div>
+      <div class="git-panel-body">
+
+        <div class="git-fields">
+          <div class="git-field" style="grid-column: 1 / -1;">
+            <label for="git-url">Repository URL <span style="color:var(--muted)">(https://github.com/owner/repo)</span></label>
+            <input type="text" id="git-url" placeholder="https://github.com/your-org/your-repo" autocomplete="off" />
+          </div>
+          <div class="git-field">
+            <label for="git-pat">Personal Access Token <span style="color:var(--muted)">(for private repos)</span></label>
+            <input type="password" id="git-pat" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" />
+          </div>
+          <div class="git-field">
+            <label for="git-branch">Branch <span style="color:var(--muted)">(leave blank for default)</span></label>
+            <input type="text" id="git-branch" placeholder="main" />
+          </div>
+          <div class="git-field" style="grid-column: 1 / -1;">
+            <label for="git-subdir">Subdirectory <span style="color:var(--muted)">(optional — e.g. src/backend)</span></label>
+            <input type="text" id="git-subdir" placeholder="Leave blank to include entire repo" />
+          </div>
+        </div>
+
+        <div class="git-actions">
+          <button class="btn btn-secondary" id="git-clone-btn" onclick="cloneRepo()" style="font-size:0.83rem; padding:8px 16px;">
+            ⬇ Clone &amp; Load
+          </button>
+          <button class="btn btn-secondary" id="git-clear-btn" onclick="clearRepo()" style="font-size:0.83rem; padding:8px 14px; display:none;">
+            ✕ Clear Repo
+          </button>
+          <span class="git-status" id="git-status"></span>
+        </div>
+
+        <!-- Repo info shown after successful clone -->
+        <div class="git-repo-info" id="git-repo-info">
+          <div class="ri-row"><span class="ri-label">Repo</span><span class="ri-val" id="ri-repo">—</span></div>
+          <div class="ri-row"><span class="ri-label">Branch</span><span class="ri-val" id="ri-branch">—</span></div>
+          <div class="ri-row"><span class="ri-label">Files</span><span class="ri-val" id="ri-files">—</span></div>
+          <div class="ri-row"><span class="ri-label">Context</span><span class="ri-val" id="ri-size">—</span></div>
+          <div class="git-tree" id="git-tree"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Suggested prompts panel -->
+    <div class="suggest-bar" id="suggest-bar">
+      <div class="suggest-header">
+        <span class="suggest-title">AI-Suggested Prompts</span>
+        <span class="suggest-domain-tag" id="suggest-domain-tag">general</span>
+        <div class="suggest-spinner" id="suggest-spinner"></div>
+        <span style="margin-left:auto; font-size:0.75rem; color:var(--muted);">Click any to add →</span>
+      </div>
+      <div class="suggested-prompts" id="suggested-prompts"></div>
+    </div>
+
+    <!-- Repo context badge (shown when repo is loaded) -->
+    <div id="repo-context-badge" style="display:none;" class="git-context-badge">
+      📦 <span id="repo-badge-text">Repo attached</span>
+      <span style="color:var(--muted);font-weight:400;font-size:0.72rem;">· code will be prepended to each prompt</span>
+    </div>
+
+    <!-- Added prompts -->
+    <div class="prompt-list" id="prompt-list">
+      <span style="font-size:0.8rem; color:var(--muted); align-self:center;">No prompts yet — add one below or use ✨ Suggest Prompts.</span>
+    </div>
+
+    <!-- Manual add -->
+    <div class="add-prompt-row">
+      <input type="text" id="new-prompt" placeholder="Type a custom prompt and press Enter…" onkeydown="handlePromptKey(event)" />
+      <button class="btn btn-secondary" onclick="addPrompt()">+ Add</button>
+    </div>
+
+    <label for="copilot-cwd" style="display:block;margin-top:12px;font-size:0.72rem;color:var(--muted);">
+      Copilot working folder (absolute path where <code>write</code> tools should create files — e.g. <code>C:\Users\you\source</code>; leave empty to use this app’s folder)
+    </label>
+    <input type="text" id="copilot-cwd" placeholder="C:\Users\you\source" style="width:100%;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-size:0.82rem;font-family:ui-monospace,monospace;" spellcheck="false" />
+
+    <button class="btn btn-run" id="run-btn" onclick="runComparison()" disabled>
+      ▶ Run Comparison
+    </button>
+  </div>
+
+  <!-- ══ Loader ══ -->
+  <div class="loader" id="loader">
+    <div class="spinner"></div>
+    <div class="loader-text" id="loader-text">Running prompts against both CLIs…</div>
+  </div>
+
+  <!-- ══ Results ══ -->
+  <div id="results-section" style="display:none;">
+
+    <!-- Winner banner -->
+    <div class="winner-banner" id="winner-banner">
+      <span class="trophy">🏆</span>
+      <div>
+        <strong id="winner-name">—</strong>
+        <div class="detail" id="winner-detail"></div>
+      </div>
+    </div>
+
+    <!-- Prompt tabs (if multiple) -->
+    <div class="card" id="prompt-tabs-card" style="display:none; padding:16px 20px;">
+      <div class="card-title" style="margin-bottom:10px;">🔀 Prompt Results</div>
+      <div class="prompt-tab-bar" id="tab-buttons"></div>
+    </div>
+
+    <!-- Side-by-side -->
+    <div class="comparison-grid">
+      <!-- Copilot -->
+      <div class="tool-panel">
+        <div class="tool-header copilot">
+          🤖 GitHub Copilot CLI
+          <span class="tool-badge">Copilot</span>
+          <span class="latency-badge" id="copilot-latency">—</span>
+        </div>
+        <div class="tool-output empty" id="copilot-output">Awaiting results…</div>
+        <div class="files-section" id="copilot-files">
+          <div class="files-title">📎 Generated Files</div>
+          <div class="file-list" id="copilot-file-list"></div>
+        </div>
+        <div class="score-section">
+          <div class="score-overall">
+            <div class="score-ring copilot" id="copilot-overall-ring">—</div>
+            <div class="score-label">
+              <strong id="copilot-overall-label">Overall Score</strong>
+              <span id="copilot-word-count"></span>
+            </div>
+          </div>
+          <div class="metric-bars" id="copilot-bars"></div>
+        </div>
+      </div>
+      <!-- OpenCode -->
+      <div class="tool-panel">
+        <div class="tool-header opencode">
+          ⚙️ OpenCode CLI
+          <span class="tool-badge">OpenCode</span>
+          <span class="latency-badge" id="opencode-latency">—</span>
+        </div>
+        <div class="tool-output empty" id="opencode-output">Awaiting results…</div>
+        <div class="files-section" id="opencode-files">
+          <div class="files-title">📎 Generated Files</div>
+          <div class="file-list" id="opencode-file-list"></div>
+        </div>
+        <div class="score-section">
+          <div class="score-overall">
+            <div class="score-ring opencode" id="opencode-overall-ring">—</div>
+            <div class="score-label">
+              <strong id="opencode-overall-label">Overall Score</strong>
+              <span id="opencode-word-count"></span>
+            </div>
+          </div>
+          <div class="metric-bars" id="opencode-bars"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div class="card history-section" id="history-section">
+      <div class="card-title">📊 All Results History</div>
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>#</th><th>Prompt</th><th>Copilot</th><th>OpenCode</th><th>Winner</th><th>Speed Δ</th>
+          </tr>
+        </thead>
+        <tbody id="history-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Empty state -->
+  <div class="empty-state" id="empty-state">
+    <div class="big-icon">🔬</div>
+    <p>Upload your agent <strong>.md</strong>, add or generate prompts, then hit <strong>Run Comparison</strong>.</p>
+  </div>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+
+<!-- ══ File Preview Modal ══ -->
+<div class="modal-overlay" id="file-modal" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">File Preview</span>
+      <span class="modal-close" onclick="closeModalDirect()" title="Close">✕</span>
+    </div>
+    <div class="modal-body">
+      <div class="modal-code" id="modal-plain">Loading…</div>
+      <div class="modal-diagram" id="modal-diagram" aria-hidden="true">
+        <div class="mermaid-diagram-host" id="mermaid-host"></div>
+        <details class="modal-mmd-source">
+          <summary>Mermaid source</summary>
+          <pre id="mmd-source-pre"></pre>
+        </details>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModalDirect()">Close</button>
+      <button class="btn btn-success" id="modal-dl-btn" onclick="downloadCurrentFile()">⬇ Download</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:5050/api';
+
+/** Wall-clock for agent badges: seconds (one decimal) if ≤60s, else minutes + seconds. */
+function formatAgentDuration(ms) {
+  if (ms == null || ms === 0) return '—';
+  const sec = ms / 1000;
+  if (sec <= 60) return `${sec.toFixed(1)} s`;
+  const m = Math.floor(sec / 60);
+  const s = Math.min(59, Math.round(sec - m * 60));
+  return `${m} min ${s} s`;
+}
+
+/** Same rules for a positive millisecond duration (e.g. latency delta). */
+function formatDeltaMs(msAbs) {
+  return formatAgentDuration(msAbs);
+}
+
+let agentContent = '';
+let agentFilename = '';
+let prompts = [];
+let results = [];
+let currentResultIdx = 0;
+let suggestedAdded = new Set();
+
+// ── Health check ──────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const res = await fetch(`${API}/health`, { signal: AbortSignal.timeout(3000) });
+    const data = await res.json();
+    document.getElementById('dot').className = 'status-dot connected';
+    const t = data.tools || {};
+    const parts = [
+      t.gh_copilot === 'available' ? 'Copilot ✓' : 'Copilot ✗',
+      t.opencode    === 'available' ? 'OpenCode ✓' : 'OpenCode ✗',
+    ];
+    document.getElementById('status-text').textContent = 'Backend — ' + parts.join(' · ');
+  } catch {
+    document.getElementById('dot').className = 'status-dot';
+    document.getElementById('status-text').textContent = 'Backend offline — start server.py';
+  }
+}
+checkHealth();
+setInterval(checkHealth, 15000);
+
+// ── Load tab switcher ─────────────────────────────────────────────────────
+function switchLoadTab(tab) {
+  document.getElementById('panel-upload').style.display = tab === 'upload' ? 'block' : 'none';
+  document.getElementById('panel-path').style.display   = tab === 'path'   ? 'block' : 'none';
+  document.getElementById('tab-upload').className = 'tab-btn' + (tab === 'upload' ? ' active' : '');
+  document.getElementById('tab-path').className   = 'tab-btn' + (tab === 'path'   ? ' active' : '');
+}
+
+// ── Drag & Drop ───────────────────────────────────────────────────────────
+function onDragOver(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.add('drag-over');
+}
+function onDragLeave(e) {
+  document.getElementById('drop-zone').classList.remove('drag-over');
+}
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+}
+function onFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) handleFile(file);
+}
+
+function handleFile(file) {
+  if (!file.name.toLowerCase().endsWith('.md')) {
+    showStatus('❌ Please select a .md file.', 'var(--danger)'); return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    agentContent = e.target.result;
+    agentFilename = file.name;
+    onAgentLoaded(file.name, file.size);
+  };
+  reader.readAsText(file);
+}
+
+// ── Load from path ────────────────────────────────────────────────────────
+async function loadMdFromPath() {
+  const path = document.getElementById('md-path').value.trim();
+  if (!path) { showStatus('Enter a file path first.', 'var(--muted)'); return; }
+  showStatus('Loading…', 'var(--muted)');
+  try {
+    const res = await fetch(`${API}/read-md`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    const data = await res.json();
+    if (data.error) { showStatus('❌ ' + data.error, 'var(--danger)'); return; }
+    agentContent = data.content;
+    agentFilename = data.filename;
+    onAgentLoaded(data.filename, new Blob([data.content]).size);
+  } catch {
+    showStatus('❌ Could not reach backend. Is server.py running?', 'var(--danger)');
+  }
+}
+
+function onAgentLoaded(filename, size) {
+  // File info bar
+  const bar = document.getElementById('file-info-bar');
+  bar.style.display = 'flex';
+  document.getElementById('fi-name').textContent = filename;
+  document.getElementById('fi-size').textContent = `(${(size/1024).toFixed(1)} KB · ${agentContent.split('\n').length} lines)`;
+
+  // Drop zone style
+  document.getElementById('drop-zone').classList.add('loaded');
+
+  // Preview
+  const prev = document.getElementById('agent-preview');
+  prev.style.display = 'block';
+  prev.textContent = agentContent.slice(0, 1000) + (agentContent.length > 1000 ? '\n…[preview truncated]' : '');
+
+  showStatus('', '');
+  document.getElementById('suggest-btn').disabled = false;
+  updateRunBtn();
+
+  // Auto-trigger suggest
+  suggestPrompts();
+}
+
+function clearFile() {
+  agentContent = ''; agentFilename = '';
+  document.getElementById('file-info-bar').style.display = 'none';
+  document.getElementById('agent-preview').style.display = 'none';
+  document.getElementById('drop-zone').classList.remove('loaded');
+  document.getElementById('file-input').value = '';
+  document.getElementById('md-path').value = '';
+  document.getElementById('suggest-btn').disabled = true;
+  document.getElementById('suggest-bar').style.display = 'none';
+  showStatus('', '');
+  updateRunBtn();
+}
+
+// ── Suggest prompts ───────────────────────────────────────────────────────
+async function suggestPrompts() {
+  if (!agentContent) return;
+  const bar = document.getElementById('suggest-bar');
+  const spinner = document.getElementById('suggest-spinner');
+  const container = document.getElementById('suggested-prompts');
+
+  bar.style.display = 'block';
+  spinner.style.display = 'inline-block';
+  container.innerHTML = '<span style="color:var(--muted); font-size:0.82rem;">Analysing your agent file…</span>';
+  suggestedAdded.clear();
+
+  try {
+    const res = await fetch(`${API}/suggest-prompts`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: agentContent, filename: agentFilename })
+    });
+    const data = await res.json();
+    spinner.style.display = 'none';
+
+    if (data.error) {
+      container.innerHTML = `<span style="color:var(--danger); font-size:0.82rem;">❌ ${data.error}</span>`;
+      return;
+    }
+
+    // Update domain tag
+    const domainMap = { architecture:'🏗 Architecture', coding:'💻 Coding', data:'📊 Data', devops:'🚀 DevOps', security:'🔐 Security', product:'📋 Product', writing:'✍ Writing', research:'🔍 Research', general:'🤖 General' };
+    // We derive domain hint from first prompt template keyword
+    const firstPrompt = (data.prompts[0] || '').toLowerCase();
+    let domain = 'general';
+    for (const [k,v] of Object.entries(domainMap)) {
+      if (firstPrompt.includes(k)) { domain = k; break; }
+    }
+    document.getElementById('suggest-domain-tag').textContent = domainMap[domain] || '🤖 General';
+
+    // Render suggested prompt items
+    container.innerHTML = data.prompts.map((p, i) => `
+      <div class="suggested-prompt-item" id="spi-${i}" onclick="addSuggestedPrompt(${i}, this)">
+        <span class="spi-icon">💡</span>
+        <span class="spi-text">${escHtml(p)}</span>
+        <span class="spi-add" id="spi-add-${i}">+ Add</span>
+      </div>
+    `).join('');
+
+    // Store for later
+    window._suggestedPrompts = data.prompts;
+
+  } catch(e) {
+    spinner.style.display = 'none';
+    container.innerHTML = `<span style="color:var(--danger); font-size:0.82rem;">❌ Failed to get suggestions. Is server.py running?</span>`;
+  }
+}
+
+function addSuggestedPrompt(idx, el) {
+  if (suggestedAdded.has(idx)) return;
+  const p = (window._suggestedPrompts || [])[idx];
+  if (!p) return;
+  prompts.push(p);
+  suggestedAdded.add(idx);
+  el.classList.add('added');
+  document.getElementById(`spi-add-${idx}`).textContent = '✓ Added';
+  renderPromptChips();
+  updateRunBtn();
+}
+
+// ── Prompt management ─────────────────────────────────────────────────────
+function handlePromptKey(e) { if (e.key === 'Enter') addPrompt(); }
+
+function addPrompt() {
+  const input = document.getElementById('new-prompt');
+  const val = input.value.trim();
+  if (!val) return;
+  prompts.push(val);
+  input.value = '';
+  renderPromptChips();
+  updateRunBtn();
+}
+
+function removePrompt(idx) {
+  prompts.splice(idx, 1);
+  renderPromptChips();
+  updateRunBtn();
+}
+
+function renderPromptChips() {
+  const list = document.getElementById('prompt-list');
+  document.getElementById('prompt-count').textContent = prompts.length;
+  if (prompts.length === 0) {
+    list.innerHTML = '<span style="font-size:0.8rem; color:var(--muted); align-self:center;">No prompts yet — add one below or use ✨ Suggest Prompts.</span>';
+    return;
+  }
+  list.innerHTML = prompts.map((p, i) => `
+    <div class="prompt-chip" title="${escHtml(p)}">
+      ${escHtml(p.length > 45 ? p.slice(0, 45) + '…' : p)}
+      <span class="remove" onclick="removePrompt(${i})">×</span>
+    </div>
+  `).join('');
+}
+
+function updateRunBtn() {
+  document.getElementById('run-btn').disabled = (prompts.length === 0);
+}
+
+// ── Run comparison ────────────────────────────────────────────────────────
+async function runComparison() {
+  if (prompts.length === 0) return;
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('results-section').style.display = 'none';
+  const loader = document.getElementById('loader');
+  loader.style.display = 'flex';
+  document.getElementById('run-btn').disabled = true;
+  results = [];
+
+  // Build system prompt — prepend repo code context if a repo is loaded
+  const baseSystem = agentContent;
+  const systemWithRepo = repoContext
+    ? `${baseSystem}\n\n---\n## Repository Code Context\n\nThe following is the source code from the repository "${repoName}".\nUse it as context when answering the user's prompt.\n\n${repoContext}`
+    : baseSystem;
+
+  for (let i = 0; i < prompts.length; i++) {
+    document.getElementById('loader-text').textContent = `Running prompt ${i + 1} of ${prompts.length}…`;
+    try {
+      const cc = (document.getElementById('copilot-cwd')?.value || '').trim();
+      const payload = { system_prompt: systemWithRepo, user_prompt: prompts[i] };
+      if (cc) payload.copilot_cwd = cc;
+      const res = await fetch(`${API}/compare`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      results.push(await res.json());
+    } catch (e) {
+      const empty = { output:'', error:'Backend error: '+e.message, latency_ms:0, scores:{quality:0,accuracy:0,speed:0,length:0,overall:0,word_count:0} };
+      results.push({ prompt: prompts[i], copilot: empty, opencode: { ...empty } });
+    }
+  }
+
+  loader.style.display = 'none';
+  document.getElementById('run-btn').disabled = false;
+  currentResultIdx = 0;
+  renderResults();
+  document.getElementById('results-section').style.display = 'block';
+  document.getElementById('results-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function renderResults() {
+  renderPromptTabs();
+  renderCurrentResult();
+  renderHistory();
+  renderWinner();
+}
+
+function renderPromptTabs() {
+  const card = document.getElementById('prompt-tabs-card');
+  if (results.length <= 1) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  document.getElementById('tab-buttons').innerHTML = results.map((r, i) => `
+    <button class="prompt-tab ${i === currentResultIdx ? 'active' : ''}"
+            onclick="switchTab(${i})" title="${escHtml(r.prompt)}">
+      ${i + 1}. ${escHtml(r.prompt.length > 28 ? r.prompt.slice(0,28)+'…' : r.prompt)}
+    </button>
+  `).join('');
+}
+
+function switchTab(idx) {
+  currentResultIdx = idx;
+  renderPromptTabs();
+  renderCurrentResult();
+}
+
+function renderCurrentResult() {
+  if (!results[currentResultIdx]) return;
+  const r = results[currentResultIdx];
+  renderPanel('copilot', r.copilot);
+  renderPanel('opencode', r.opencode);
+}
+
+function renderPanel(tool, data) {
+  const outputEl  = document.getElementById(`${tool}-output`);
+  const latencyEl = document.getElementById(`${tool}-latency`);
+  const ringEl    = document.getElementById(`${tool}-overall-ring`);
+  const labelEl   = document.getElementById(`${tool}-overall-label`);
+  const wcEl      = document.getElementById(`${tool}-word-count`);
+
+  latencyEl.textContent = formatAgentDuration(data.latency_ms);
+
+  if (data.error && !data.output) {
+    outputEl.className = 'tool-output error-text';
+    outputEl.textContent = '⚠ ' + data.error;
+  } else {
+    outputEl.className = 'tool-output';
+    outputEl.textContent = data.output || '(empty response)';
+  }
+
+  // Render any generated files
+  renderFiles(tool, data.files || []);
+
+  const s = data.scores || {};
+  ringEl.textContent = s.overall ?? '—';
+  const grade = (s.overall >= 80) ? '🟢 Excellent' : (s.overall >= 60) ? '🟡 Good' : (s.overall >= 40) ? '🟠 Fair' : '🔴 Poor';
+  labelEl.textContent = `${s.overall ?? 0}/100 — ${grade}`;
+  wcEl.textContent = s.word_count != null ? `${s.word_count} words` : '';
+
+  const metrics = [
+    { key: 'quality',  label: 'Quality' },
+    { key: 'accuracy', label: 'Accuracy' },
+    { key: 'speed',    label: 'Speed' },
+    { key: 'length',   label: 'Length' },
+  ];
+  document.getElementById(`${tool}-bars`).innerHTML = metrics.map(m => `
+    <div class="metric-row">
+      <span class="metric-name">${m.label}</span>
+      <div class="metric-bar-bg">
+        <div class="metric-bar-fill bar-${tool}" style="width:${s[m.key] ?? 0}%"></div>
+      </div>
+      <span class="metric-val">${s[m.key] ?? 0}</span>
+    </div>
+  `).join('');
+}
+
+// ── Generated files ───────────────────────────────────────────────────────
+const FILE_ICONS = {
+  py:'🐍', js:'📜', ts:'📘', jsx:'⚛️', tsx:'⚛️',
+  html:'🌐', css:'🎨', json:'📋', yaml:'⚙️', yml:'⚙️',
+  md:'📝', mmd:'📐', mermaid:'📐', txt:'📄', sh:'🖥️', bat:'🖥️', sql:'🗄️',
+  csv:'📊', xml:'🔖', dockerfile:'🐳', env:'🔐',
+};
+
+function fileIcon(ext) {
+  return FILE_ICONS[(ext || '').toLowerCase()] || '📄';
+}
+
+function renderFiles(tool, files) {
+  const section = document.getElementById(`${tool}-files`);
+  const listEl  = document.getElementById(`${tool}-file-list`);
+  if (!files || files.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  listEl.innerHTML = files.map((f, i) => {
+    const safePathAttr = escHtml(f.path);
+    const payload = encodeURIComponent(JSON.stringify({
+      path: f.path,
+      name: f.name,
+      resolve_base: f.resolve_base || ''
+    }));
+    const existsBadge  = f.exists
+      ? ''
+      : '<span style="font-size:0.68rem;color:var(--warning);margin-left:4px;" title="File may not exist yet">⚠</span>';
+    return `
+      <div class="file-item">
+        <span class="file-icon">${fileIcon(f.ext)}</span>
+        <span class="file-name" title="${safePathAttr}">${escHtml(f.name)}${existsBadge}</span>
+        <span class="file-ext">.${escHtml(f.ext || '?')}</span>
+        <div class="file-actions">
+          <button type="button" class="file-btn" data-f="${payload}" onclick="previewFileClick(event)" title="Preview">👁 View</button>
+          <button type="button" class="file-btn dl" data-f="${payload}" onclick="downloadFileClick(event)" title="Download">⬇ Save</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── Modal state ───────────────────────────────────────────────────────────
+let _modalCurrentPath = '';
+let _modalCurrentName = '';
+let _modalResolveBase = '';
+let _mermaidInitialized = false;
+
+function isMermaidPreview(filename, ext) {
+  const e = (ext || '').toLowerCase();
+  const n = (filename || '').toLowerCase();
+  return e === 'mmd' || e === 'mermaid' || n.endsWith('.mmd') || n.endsWith('.mermaid');
+}
+
+function initMermaidTheme() {
+  if (_mermaidInitialized || typeof mermaid === 'undefined') return;
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'dark',
+    securityLevel: 'loose',
+    flowchart: { htmlLabels: true, curve: 'basis' },
+  });
+  _mermaidInitialized = true;
+}
+
+function previewFileClick(ev) {
+  const btn = ev.currentTarget;
+  let payload;
+  try {
+    payload = JSON.parse(decodeURIComponent(btn.dataset.f));
+  } catch (e) {
+    return;
+  }
+  previewFile(payload.path, payload.name, payload.resolve_base || '');
+}
+
+function downloadFileClick(ev) {
+  const btn = ev.currentTarget;
+  let payload;
+  try {
+    payload = JSON.parse(decodeURIComponent(btn.dataset.f));
+  } catch (e) {
+    return;
+  }
+  downloadFile(payload.path, payload.name, payload.resolve_base || '');
+}
+
+async function previewFile(path, name, resolveBase = '') {
+  _modalCurrentPath = path;
+  _modalCurrentName = name;
+  _modalResolveBase = resolveBase || '';
+  const modal     = document.getElementById('file-modal');
+  const titleEl   = document.getElementById('modal-title');
+  const plainEl   = document.getElementById('modal-plain');
+  const diagramEl = document.getElementById('modal-diagram');
+  const host      = document.getElementById('mermaid-host');
+  const srcPre    = document.getElementById('mmd-source-pre');
+
+  titleEl.textContent = name;
+  plainEl.style.display = 'block';
+  plainEl.style.color = '';
+  diagramEl.style.display = 'none';
+  diagramEl.setAttribute('aria-hidden', 'true');
+  host.innerHTML = '';
+  plainEl.textContent = 'Loading…';
+  modal.classList.add('open');
+
+  try {
+    const body = { path };
+    if (_modalResolveBase) body.resolve_base = _modalResolveBase;
+    const res = await fetch(`${API}/read-file`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.error) {
+      plainEl.style.display = 'block';
+      diagramEl.style.display = 'none';
+      plainEl.style.color = 'var(--danger)';
+      plainEl.textContent = '⚠ ' + data.error;
+      return;
+    }
+    plainEl.style.color = '';
+    const wantDiagram = isMermaidPreview(name, data.ext);
+    if (wantDiagram && typeof mermaid !== 'undefined') {
+      plainEl.style.display = 'none';
+      diagramEl.style.display = 'block';
+      diagramEl.setAttribute('aria-hidden', 'false');
+      let text = data.content || '';
+      if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+      srcPre.textContent = text;
+      host.innerHTML = '';
+      const graph = document.createElement('div');
+      graph.className = 'mermaid';
+      graph.textContent = text;
+      host.appendChild(graph);
+      initMermaidTheme();
+      try {
+        await mermaid.run({ nodes: [graph] });
+      } catch (renderErr) {
+        host.innerHTML = '';
+        const errP = document.createElement('p');
+        errP.style.cssText = 'color:var(--danger);font-size:0.85rem;margin-bottom:10px;';
+        errP.textContent = 'Could not render diagram: ' + (renderErr.message || String(renderErr));
+        host.appendChild(errP);
+        const fb = document.createElement('pre');
+        fb.className = 'modal-code';
+        fb.style.minHeight = '120px';
+        fb.textContent = text;
+        host.appendChild(fb);
+      }
+    } else {
+      plainEl.style.display = 'block';
+      diagramEl.style.display = 'none';
+      diagramEl.setAttribute('aria-hidden', 'true');
+      if (wantDiagram) {
+        plainEl.textContent = '⚠ Mermaid library did not load. Raw source:\n\n' + (data.content || '');
+      } else {
+        plainEl.textContent = data.content || '';
+      }
+    }
+  } catch (e) {
+    plainEl.style.display = 'block';
+    diagramEl.style.display = 'none';
+    plainEl.style.color = 'var(--danger)';
+    plainEl.textContent = '⚠ Could not reach backend.';
+  }
+}
+
+async function downloadFile(path, name, resolveBase = '') {
+  try {
+    const body = { path, name };
+    if (resolveBase) body.resolve_base = resolveBase;
+    const res = await fetch(`${API}/download-file`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert('Download failed: ' + (data.error || res.statusText));
+      return;
+    }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = name || 'file';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Download failed: ' + e.message);
+  }
+}
+
+function downloadCurrentFile() {
+  if (_modalCurrentPath) downloadFile(_modalCurrentPath, _modalCurrentName, _modalResolveBase);
+}
+
+function closeModal(e) {
+  // Only close if clicking the backdrop, not the modal itself
+  if (e.target === document.getElementById('file-modal')) closeModalDirect();
+}
+function closeModalDirect() {
+  document.getElementById('file-modal').classList.remove('open');
+}
+
+function renderWinner() {
+  if (!results.length) return;
+  let ct = 0, ot = 0;
+  results.forEach(r => {
+    ct += r.copilot?.scores?.overall ?? 0;
+    ot += r.opencode?.scores?.overall ?? 0;
+  });
+  const n = results.length;
+  const ca = Math.round(ct / n), oa = Math.round(ot / n);
+  const banner = document.getElementById('winner-banner');
+  const nameEl = document.getElementById('winner-name');
+  const detailEl = document.getElementById('winner-detail');
+  banner.style.display = 'flex';
+  if (Math.abs(ca - oa) <= 3) {
+    nameEl.textContent = "It's a Tie! 🤝";
+    detailEl.textContent = `Copilot avg: ${ca}/100 · OpenCode avg: ${oa}/100`;
+  } else if (ca > oa) {
+    nameEl.textContent = '🤖 GitHub Copilot CLI wins';
+    detailEl.textContent = `Avg ${ca}/100 vs OpenCode ${oa}/100 — Δ ${ca - oa} pts across ${n} prompt(s)`;
+  } else {
+    nameEl.textContent = '⚙️ OpenCode CLI wins';
+    detailEl.textContent = `Avg ${oa}/100 vs Copilot ${ca}/100 — Δ ${oa - ca} pts across ${n} prompt(s)`;
+  }
+}
+
+function renderHistory() {
+  if (!results.length) return;
+  document.getElementById('history-section').style.display = 'block';
+  document.getElementById('history-body').innerHTML = results.map((r, i) => {
+    const cs = r.copilot?.scores?.overall ?? 0;
+    const os = r.opencode?.scores?.overall ?? 0;
+    const delta = (r.opencode?.latency_ms ?? 0) - (r.copilot?.latency_ms ?? 0);
+    const winnerTag = Math.abs(cs - os) <= 3
+      ? `<span class="winner-tag winner-tie">Tie</span>`
+      : cs > os
+        ? `<span class="winner-tag winner-copilot">Copilot</span>`
+        : `<span class="winner-tag winner-opencode">OpenCode</span>`;
+    const speedStr = delta === 0 ? '—'
+      : delta > 0 ? `Copilot +${formatDeltaMs(Math.abs(delta))} faster`
+      : `OpenCode +${formatDeltaMs(Math.abs(delta))} faster`;
+    return `
+      <tr onclick="switchTab(${i})">
+        <td>${i + 1}</td>
+        <td style="max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escHtml(r.prompt)}">${escHtml(r.prompt)}</td>
+        <td><strong style="color:var(--copilot)">${cs}</strong></td>
+        <td><strong style="color:var(--opencode)">${os}</strong></td>
+        <td>${winnerTag}</td>
+        <td style="color:var(--muted); font-size:0.76rem;">${speedStr}</td>
+      </tr>`;
+  }).join('');
+}
+
+// ── Git repo ──────────────────────────────────────────────────────────────
+let repoToken   = '';
+let repoContext = '';
+let repoName    = '';
+
+function toggleGitPanel() {
+  const panel = document.getElementById('git-panel');
+  panel.classList.toggle('open');
+}
+
+async function cloneRepo() {
+  const url    = document.getElementById('git-url').value.trim();
+  const pat    = document.getElementById('git-pat').value.trim();
+  const branch = document.getElementById('git-branch').value.trim();
+  const subdir = document.getElementById('git-subdir').value.trim();
+
+  if (!url) { setGitStatus('Enter a repository URL first.', ''); return; }
+
+  const btn = document.getElementById('git-clone-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Cloning…';
+  setGitStatus('Cloning repository — this may take a moment…', '');
+  document.getElementById('git-repo-info').style.display = 'none';
+
+  try {
+    const res  = await fetch(`${API}/clone-repo`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, pat, branch, subdir })
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      setGitStatus('❌ ' + data.error, 'err');
+      btn.disabled = false; btn.textContent = '⬇ Clone & Load';
+      return;
+    }
+
+    repoToken = data.token;
+    repoName  = data.repo_name;
+
+    // Fetch the actual code context string
+    const ctxRes  = await fetch(`${API}/repo-context`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: repoToken })
+    });
+    const ctxData = await ctxRes.json();
+    if (ctxData.error) {
+      setGitStatus('❌ ' + ctxData.error, 'err');
+      btn.disabled = false; btn.textContent = '⬇ Clone & Load';
+      return;
+    }
+    repoContext = ctxData.code_context;
+
+    // Show info card
+    document.getElementById('git-repo-info').style.display = 'block';
+    document.getElementById('ri-repo').textContent   = data.repo_name;
+    document.getElementById('ri-branch').textContent = data.branch;
+    document.getElementById('ri-files').textContent  = `${data.file_count} source file(s)`;
+    document.getElementById('ri-size').textContent   = `~${Math.round(data.size_chars / 1000)} KB of code`;
+    document.getElementById('git-tree').textContent  = data.tree_preview;
+
+    setGitStatus(`✅ Loaded ${data.file_count} files from ${data.repo_name}`, 'ok');
+    document.getElementById('git-clear-btn').style.display = 'inline-flex';
+    btn.disabled = false;
+    btn.textContent = '🔄 Re-clone';
+
+    // Show badge above prompts
+    document.getElementById('repo-context-badge').style.display = 'inline-flex';
+    document.getElementById('repo-badge-text').textContent =
+      `${data.repo_name} @ ${data.branch} — ${data.file_count} files`;
+
+  } catch(e) {
+    setGitStatus('❌ ' + e.message, 'err');
+    btn.disabled = false;
+    btn.textContent = '⬇ Clone & Load';
+  }
+}
+
+async function clearRepo() {
+  if (repoToken) {
+    fetch(`${API}/repo-cleanup`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: repoToken })
+    }).catch(() => {});
+  }
+  repoToken   = '';
+  repoContext = '';
+  repoName    = '';
+  document.getElementById('git-repo-info').style.display = 'none';
+  document.getElementById('git-clear-btn').style.display = 'none';
+  document.getElementById('repo-context-badge').style.display = 'none';
+  document.getElementById('git-clone-btn').textContent = '⬇ Clone & Load';
+  setGitStatus('Repo cleared.', '');
+}
+
+function setGitStatus(msg, cls) {
+  const el = document.getElementById('git-status');
+  el.textContent = msg;
+  el.className = 'git-status' + (cls ? ' ' + cls : '');
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────
+function showStatus(msg, color) {
+  const el = document.getElementById('md-status');
+  el.textContent = msg;
+  el.style.color = color;
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
