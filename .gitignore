@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local data and tooling
+evalkit_results.db
+.claude/
+docs/examples/agent_sandbox/
+docs/examples/analysis_stats.json
+
+# Unpublished manuscript (not part of the code release)
+docs/paper/

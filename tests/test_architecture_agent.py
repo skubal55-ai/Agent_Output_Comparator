@@ -12,7 +12,7 @@ MOCK_SPEC_CONTENT = """# Agent Output Comparator — Architecture Overview
 
 ## Purpose
 
-The **Agent Output Comparator** is a local developer tool that runs identical prompts against two AI coding CLIs — **GitHub Copilot CLI** and **OpenCode CLI** — measures latency, and scores each output across four quality dimensions. Results are displayed side-by-side in a browser UI so developers can evaluate and compare agent behaviour objectively.
+The **Agent Output Comparator** is a local developer tool that runs identical prompts against two AI coding CLIs — **GitHub Copilot CLI** and **Claude Code CLI** — measures latency, and scores each output across four quality dimensions. Results are displayed side-by-side in a browser UI so developers can evaluate and compare agent behaviour objectively.
 
 ---
 
@@ -23,7 +23,7 @@ The **Agent Output Comparator** is a local developer tool that runs identical pr
 | Frontend UI | Single-page HTML / JS / CSS | Prompt entry, file upload, side-by-side diff, score charts |
 | Flask API Server | Python 3, Flask, flask-cors | REST endpoints, orchestration, scoring |
 | Copilot CLI Runner | `subprocess` (no shell) | Invokes `copilot.exe`, captures JSONL output |
-| OpenCode CLI Runner | `subprocess` (shell, stdin redirect) | Invokes `opencode`, captures JSONL output |
+| Claude Code CLI Runner | `subprocess` (stdin) | Invokes `claude -p`, captures the JSON result |
 | Scoring Engine | Pure Python | 4-dimension heuristic scoring (quality, accuracy, speed, length) |
 | File Resolver | Pure Python | Resolves relative paths in agent output across common Windows locations |
 
@@ -72,7 +72,7 @@ Browser
   │       ├─ run_copilot_cli()  →  copilot.exe  (temp file + subprocess, no shell)
   │       │        └─ parse JSONL  →  extract assistant.message
   │       │
-  │       ├─ run_opencode_cli() →  opencode.cmd (shell + stdin redirect)
+  │       ├─ run_claude_cli() →  claude.exe (-p, prompt on stdin)
   │       │        └─ parse JSONL  →  extract type=text parts
   │       │
   │       └─ score_output() × 2  →  quality / accuracy / speed / length
@@ -84,11 +84,11 @@ Browser
 
 ## Design Decisions
 
-- **No shell quoting issues:** Copilot prompts are written to a temp file and passed via `-p` flag as a list argument (`shell=False`). OpenCode prompts are written to a temp file and piped via stdin redirect.
-- **JSONL output parsing:** Both CLIs emit JSONL. The server extracts only `assistant.message` (Copilot) and `type=text` (OpenCode) events; all tool-use chatter and stats are discarded.
+- **No shell quoting issues:** Copilot prompts are written to a temp file and passed via `-p` flag as a list argument (`shell=False`). Claude Code prompts are passed on standard input with `-p --output-format json`.
+- **JSONL output parsing:** Copilot emits JSONL and Claude Code emits one JSON result. The server extracts only `assistant.message` (Copilot) events and the `result` field (Claude Code); all tool-use chatter and stats are discarded.
 - **No database:** All state is ephemeral. Each comparison request is self-contained.
 - **CORS enabled globally:** Allows the UI (`index.html` opened from file system or a different port) to call the Flask server.
-- **Configurable via env vars:** `COMPARE_COPILOT_CWD`, `COMPARE_COPILOT_TIMEOUT_SEC`, `COMPARE_OPENCODE_SPEC` override defaults without code changes.
+- **Configurable via env vars:** `COMPARE_COPILOT_CWD`, `COMPARE_COPILOT_TIMEOUT_SEC`, `COMPARE_CLAUDE_TIMEOUT_SEC` override defaults without code changes.
 
 ---
 

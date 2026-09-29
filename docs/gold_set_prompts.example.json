@@ -1,0 +1,27 @@
+[
+  {
+    "id": "recursion-explain",
+    "system_prompt": "",
+    "user_prompt": "Explain how recursion works and give a simple example in Python."
+  },
+  {
+    "id": "reverse-string",
+    "system_prompt": "",
+    "user_prompt": "Write a Python function that reverses a string, with a docstring and a usage example."
+  },
+  {
+    "id": "binary-search",
+    "system_prompt": "",
+    "user_prompt": "Implement binary search in Python and explain its time complexity."
+  },
+  {
+    "id": "sql-join-explain",
+    "system_prompt": "",
+    "user_prompt": "Explain the difference between INNER JOIN and LEFT JOIN in SQL, with an example query for each."
+  },
+  {
+    "id": "debug-off-by-one",
+    "system_prompt": "",
+    "user_prompt": "Here is a Python loop that has an off-by-one error: `for i in range(1, len(items)): print(items[i])`. Find the bug and fix it."
+  }
+]

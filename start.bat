@@ -18,7 +18,7 @@ start /B python server.py
 REM Wait then open frontend
 timeout /t 2 /nobreak >nul
 echo   Opening frontend in browser...
-start index.html
+start http://localhost:5050
 
 echo.
 echo   Running! Close this window to stop the backend.

@@ -3,7 +3,7 @@
 ## System Purpose
 The **Agent Output Comparator** is a local web application that lets engineers
 run the same prompt against multiple AI coding agents (GitHub Copilot CLI and
-OpenCode), inspect their file outputs side-by-side, and score the results.
+Claude Code), inspect their file outputs side-by-side, and score the results.
 
 ## Key Quality Attributes
 - **Observability** – every run is streamed and persisted for diff review.

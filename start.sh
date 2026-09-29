@@ -24,11 +24,11 @@ sleep 1
 echo "  Opening frontend in browser..."
 
 if command -v open &>/dev/null; then
-  open index.html            # macOS
+  open http://localhost:5050      # macOS
 elif command -v xdg-open &>/dev/null; then
-  xdg-open index.html        # Linux
+  xdg-open http://localhost:5050  # Linux
 else
-  echo "  → Open index.html manually in your browser."
+  echo "  → Open http://localhost:5050 in your browser."
 fi
 
 echo ""

@@ -1,0 +1,67 @@
+[
+  ["Architecture", "Compare monolith vs microservices for an e-commerce platform with 1 million users and recommend one."],
+  ["Architecture", "Explain the cache-aside pattern and when to use it."],
+  ["Architecture", "How would you design a URL shortener that handles 10,000 requests per second?"],
+  ["Architecture", "When should a team choose event-driven architecture over request-response? Give trade-offs."],
+  ["Architecture", "Explain the CQRS pattern with a concrete example and its downsides."],
+
+  ["Python", "Show a Python function that removes duplicates from a list while preserving order, and explain its complexity."],
+  ["Python", "Explain the difference between a list, tuple, set and dict in Python with one example each."],
+  ["Python", "How do Python decorators work? Show a timing decorator example."],
+  ["Python", "Explain Python's GIL and how it affects multithreading vs multiprocessing."],
+  ["Python", "Show how to read a very large CSV in Python in chunks with pandas to limit memory use."],
+
+  ["JavaScript/TypeScript", "Explain the JavaScript event loop, including microtasks and macrotasks."],
+  ["JavaScript/TypeScript", "What is the difference between let, const and var in JavaScript?"],
+  ["JavaScript/TypeScript", "Show a debounce function in TypeScript and explain when to use it."],
+  ["JavaScript/TypeScript", "Explain the difference between Promise.all, Promise.allSettled and Promise.race."],
+  ["JavaScript/TypeScript", "What are the React hooks useEffect and useMemo, and when should each be used?"],
+
+  ["Debugging", "Why does this Python code print [2, 2, 2]? funcs = [lambda: i for i in range(3)]; print([f() for f in funcs])"],
+  ["Debugging", "Review this SQL for problems: SELECT * FROM orders WHERE YEAR(created_at) = 2024 AND status LIKE '%paid%'"],
+  ["Debugging", "A Java service throws OutOfMemoryError after running for two days. How would you investigate?"],
+  ["Debugging", "What is wrong with this JavaScript and how do you fix it? for (var i = 0; i < 3; i++) { setTimeout(() => console.log(i), 100); }"],
+  ["Debugging", "A REST API endpoint is slow only under load. Give a step-by-step approach to find the bottleneck."],
+
+  ["SQL & Data", "Explain the difference between INNER JOIN, LEFT JOIN and FULL OUTER JOIN with a small example."],
+  ["SQL & Data", "Show a SQL query that returns the top 3 highest-paid employees per department."],
+  ["SQL & Data", "When should you add a database index, and when can an index hurt performance?"],
+  ["SQL & Data", "Explain database normalization up to third normal form with an example."],
+  ["SQL & Data", "Compare PostgreSQL and MongoDB for a product catalog with frequently changing attributes."],
+
+  ["DevOps & Cloud", "Explain the difference between a Docker image and a Docker container."],
+  ["DevOps & Cloud", "What is the difference between a Kubernetes Deployment, StatefulSet and DaemonSet?"],
+  ["DevOps & Cloud", "Describe a blue-green deployment and how it differs from a canary release."],
+  ["DevOps & Cloud", "What stages should a good CI/CD pipeline for a Python web app include?"],
+  ["DevOps & Cloud", "Explain Infrastructure as Code and compare Terraform with Ansible."],
+
+  ["Security", "Explain SQL injection and how parameterized queries prevent it."],
+  ["Security", "What is the difference between authentication and authorization? Give examples."],
+  ["Security", "Explain how JWT works and list its common security pitfalls."],
+  ["Security", "What is Cross-Site Scripting (XSS) and how do you prevent it in a web app?"],
+  ["Security", "How should passwords be stored in a database? Compare bcrypt, scrypt and Argon2."],
+
+  ["Algorithms", "Explain Big-O notation with examples of O(1), O(log n), O(n) and O(n^2)."],
+  ["Algorithms", "Explain how binary search works and show it in Python."],
+  ["Algorithms", "What is dynamic programming? Explain it using the Fibonacci sequence."],
+  ["Algorithms", "Compare BFS and DFS graph traversal and when to use each."],
+  ["Algorithms", "How does a hash map handle collisions?"],
+
+  ["API Design", "What are the key principles of RESTful API design?"],
+  ["API Design", "Compare REST, GraphQL and gRPC for a mobile app backend."],
+  ["API Design", "How would you version a public REST API without breaking existing clients?"],
+  ["API Design", "Explain idempotency in APIs and why it matters for payment requests."],
+  ["API Design", "What is rate limiting and how does the token bucket algorithm work?"],
+
+  ["Git & Tooling", "Explain the difference between git merge and git rebase and when to use each."],
+  ["Git & Tooling", "How do you undo the last git commit that has already been pushed to a shared branch?"],
+  ["Git & Tooling", "What is a good branching strategy for a team of 10 developers releasing every two weeks?"],
+  ["Git & Tooling", "Explain what git cherry-pick does and a situation where it is useful."],
+  ["Git & Tooling", "How do you resolve a merge conflict in git, step by step?"],
+
+  ["Tech Writing", "Explain what an API is to a non-technical manager in under 100 words."],
+  ["Tech Writing", "Summarize the SOLID principles with a one-line example for each."],
+  ["Tech Writing", "Explain the difference between unit, integration and end-to-end testing."],
+  ["Tech Writing", "Draft a short incident summary for a 30-minute outage caused by an expired TLS certificate."],
+  ["Tech Writing", "Explain technical debt and how a team can manage it."]
+]

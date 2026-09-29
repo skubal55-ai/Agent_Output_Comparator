@@ -93,7 +93,7 @@ def generate_overview_md_content(spec_content: str) -> str:
 ## System Purpose
 The **Agent Output Comparator** is a local web application that lets engineers
 run the same prompt against multiple AI coding agents (GitHub Copilot CLI and
-OpenCode), inspect their file outputs side-by-side, and score the results.
+Claude Code), inspect their file outputs side-by-side, and score the results.
 
 ## Key Quality Attributes
 - **Observability** – every run is streamed and persisted for diff review.
@@ -124,12 +124,12 @@ def generate_c4_level1_context_mmd_content(spec_content: str) -> str:
     User([User])
     System[Agent Output Comparator]
     CopilotCLI[GitHub Copilot CLI]
-    OpenCodeCLI[OpenCode CLI]
+    ClaudeCodeCLI[Claude Code CLI]
 
     Developer --> System
     User --> System
     System --> CopilotCLI
-    System --> OpenCodeCLI
+    System --> ClaudeCodeCLI
 """
 
 
@@ -142,22 +142,22 @@ def generate_c4_level2_container_mmd_content(spec_content: str) -> str:
     subgraph Backend
         FlaskAPIServer[Flask API Server - Python 3]
         CopilotCLIRunner[Copilot CLI Runner - subprocess]
-        OpenCodeCLIRunner[OpenCode CLI Runner - subprocess]
+        ClaudeCodeCLIRunner[Claude Code CLI Runner - subprocess]
         ScoringEngine[Scoring Engine - Pure Python]
         FileResolver[File Resolver - Pure Python]
     end
     subgraph ExternalCLIs
         CopilotExe[copilot.exe]
-        OpenCodeCmd[opencode.cmd]
+        ClaudeExe[claude.exe]
     end
 
     Browser -->|REST /api/*| FlaskAPIServer
     FlaskAPIServer --> CopilotCLIRunner
-    FlaskAPIServer --> OpenCodeCLIRunner
+    FlaskAPIServer --> ClaudeCodeCLIRunner
     FlaskAPIServer --> ScoringEngine
     FlaskAPIServer --> FileResolver
     CopilotCLIRunner --> CopilotExe
-    OpenCodeCLIRunner --> OpenCodeCmd
+    ClaudeCodeCLIRunner --> ClaudeExe
 """
 
 
@@ -171,13 +171,13 @@ def generate_c4_level3_component_mmd_content(spec_content: str) -> str:
     end
     subgraph Runners
         CopilotCLIRunner[Copilot CLI Runner]
-        OpenCodeCLIRunner[OpenCode CLI Runner]
+        ClaudeCodeCLIRunner[Claude Code CLI Runner]
     end
     ScoringEngine[Scoring Engine]
     FileResolver[File Resolver]
 
     CompareEndpoint --> CopilotCLIRunner
-    CompareEndpoint --> OpenCodeCLIRunner
+    CompareEndpoint --> ClaudeCodeCLIRunner
     CompareEndpoint --> ScoringEngine
     ReadMDEndpoint --> FileResolver
     SuggestPromptsEndpoint --> FileResolver
@@ -196,7 +196,7 @@ def generate_c4_level4_code_mmd_content(spec_content: str) -> str:
         +run(prompt, cwd) dict
         -_parse_jsonl(output) str
     }
-    class OpenCodeCLIRunner {
+    class ClaudeCodeCLIRunner {
         +run(prompt, spec_path) dict
         -_parse_jsonl(output) str
     }
@@ -212,13 +212,13 @@ def generate_c4_level4_code_mmd_content(spec_content: str) -> str:
     }
     class CompareResponse {
         +copilot_output str
-        +opencode_output str
+        +claude_output str
         +copilot_score dict
-        +opencode_score dict
+        +claude_score dict
     }
 
     FlaskAPIServer --> CopilotCLIRunner
-    FlaskAPIServer --> OpenCodeCLIRunner
+    FlaskAPIServer --> ClaudeCodeCLIRunner
     FlaskAPIServer --> ScoringEngine
     FlaskAPIServer --> FileResolver
     FlaskAPIServer --> CompareResponse

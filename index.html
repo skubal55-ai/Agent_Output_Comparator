@@ -14,7 +14,7 @@
     --accent: #7c6af7;
     --accent2: #00c9a7;
     --copilot: #58a6ff;
-    --opencode: #f97f51;
+    --claude: #d97757;
     --text: #e2e8f0;
     --muted: #8892a4;
     --danger: #f87171;
@@ -32,7 +32,7 @@
     padding: 18px 32px;
     display: flex; align-items: center; gap: 16px;
   }
-  header .logo { font-size: 1.5rem; font-weight: 800; background: linear-gradient(90deg, var(--copilot), var(--accent), var(--opencode)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  header .logo { font-size: 1.5rem; font-weight: 800; background: linear-gradient(90deg, var(--copilot), var(--accent), var(--claude)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
   header .subtitle { color: var(--muted); font-size: 0.82rem; margin-top: 2px; }
   .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); display: inline-block; margin-right: 6px; transition: background 0.4s; }
   .status-dot.connected { background: var(--success); }
@@ -88,7 +88,7 @@
   .btn-success { background: rgba(52,211,153,0.15); color: var(--success); border: 1px solid rgba(52,211,153,0.3); }
   .btn-success:hover:not(:disabled) { background: rgba(52,211,153,0.25); }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
-  .btn-run { background: linear-gradient(135deg, var(--copilot), var(--opencode)); color: #fff; font-size: 0.97rem; padding: 12px 32px; border-radius: 10px; width: 100%; justify-content: center; margin-top: 10px; }
+  .btn-run { background: linear-gradient(135deg, var(--copilot), var(--claude)); color: #fff; font-size: 0.97rem; padding: 12px 32px; border-radius: 10px; width: 100%; justify-content: center; margin-top: 10px; }
   .btn-run:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
 
   /* ── File info bar ── */
@@ -168,10 +168,10 @@
   .tool-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
   .tool-header { padding: 13px 18px; display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 0.97rem; border-bottom: 1px solid var(--border); }
   .tool-header.copilot { background: rgba(88,166,255,0.07); border-color: rgba(88,166,255,0.25); }
-  .tool-header.opencode { background: rgba(249,127,81,0.07); border-color: rgba(249,127,81,0.25); }
+  .tool-header.claude { background: rgba(217,119,87,0.07); border-color: rgba(217,119,87,0.25); }
   .tool-badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 20px; font-weight: 700; }
   .copilot .tool-badge { background: rgba(88,166,255,0.2); color: var(--copilot); }
-  .opencode .tool-badge { background: rgba(249,127,81,0.2); color: var(--opencode); }
+  .claude .tool-badge { background: rgba(217,119,87,0.2); color: var(--claude); }
   .latency-badge { margin-left: auto; font-size: 0.73rem; color: var(--muted); font-weight: 400; }
 
   .tool-output { padding: 14px 18px; min-height: 150px; font-family: 'Fira Code', 'Cascadia Code', monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; color: var(--text); background: #0d0f1a; line-height: 1.7; max-height: 360px; overflow-y: auto; border-bottom: 1px solid var(--border); }
@@ -215,7 +215,7 @@
   .score-overall { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
   .score-ring { width: 54px; height: 54px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.05rem; font-weight: 800; flex-shrink: 0; border: 3px solid; }
   .score-ring.copilot { border-color: var(--copilot); color: var(--copilot); }
-  .score-ring.opencode { border-color: var(--opencode); color: var(--opencode); }
+  .score-ring.claude { border-color: var(--claude); color: var(--claude); }
   .score-label { font-size: 0.78rem; color: var(--muted); }
   .score-label strong { display: block; font-size: 0.92rem; color: var(--text); }
   .metric-bars { display: flex; flex-direction: column; gap: 7px; }
@@ -224,7 +224,7 @@
   .metric-bar-bg { flex: 1; height: 5px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
   .metric-bar-fill { height: 100%; border-radius: 3px; transition: width 0.8s cubic-bezier(.4,0,.2,1); }
   .bar-copilot { background: var(--copilot); }
-  .bar-opencode { background: var(--opencode); }
+  .bar-claude { background: var(--claude); }
   .metric-val { width: 28px; text-align: right; font-weight: 700; font-size: 0.8rem; }
 
   /* ── Winner banner ── */
@@ -241,7 +241,7 @@
   .history-table tr:hover td { background: var(--surface2); cursor: pointer; }
   .winner-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.68rem; font-weight: 700; }
   .winner-copilot { background: rgba(88,166,255,0.15); color: var(--copilot); }
-  .winner-opencode { background: rgba(249,127,81,0.15); color: var(--opencode); }
+  .winner-claude { background: rgba(217,119,87,0.15); color: var(--claude); }
   .winner-tie { background: rgba(124,106,247,0.15); color: var(--accent); }
 
   /* ── Prompt tabs ── */
@@ -266,7 +266,7 @@
 <header>
   <div>
     <div class="logo">⚡ Agent Output Comparator</div>
-    <div class="subtitle">Copilot CLI vs OpenCode CLI — side-by-side scoring</div>
+    <div class="subtitle">Copilot CLI vs Claude Code CLI — side-by-side scoring</div>
   </div>
   <div id="server-status">
     <span class="status-dot" id="dot"></span>
@@ -406,7 +406,7 @@
     </div>
 
     <label for="copilot-cwd" style="display:block;margin-top:12px;font-size:0.72rem;color:var(--muted);">
-      Copilot working folder (absolute path where <code>write</code> tools should create files — e.g. <code>C:\Users\you\source</code>; leave empty to use this app’s folder)
+      Agent working folder for Copilot and Claude (absolute path where their file tools should create files — e.g. <code>C:\Users\you\source</code>; leave empty to use this app’s folder)
     </label>
     <input type="text" id="copilot-cwd" placeholder="C:\Users\you\source" style="width:100%;margin-top:4px;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-size:0.82rem;font-family:ui-monospace,monospace;" spellcheck="false" />
 
@@ -464,27 +464,27 @@
           <div class="metric-bars" id="copilot-bars"></div>
         </div>
       </div>
-      <!-- OpenCode -->
+      <!-- Claude Code -->
       <div class="tool-panel">
-        <div class="tool-header opencode">
-          ⚙️ OpenCode CLI
-          <span class="tool-badge">OpenCode</span>
-          <span class="latency-badge" id="opencode-latency">—</span>
+        <div class="tool-header claude">
+          ✳️ Claude Code CLI
+          <span class="tool-badge">Claude</span>
+          <span class="latency-badge" id="claude-latency">—</span>
         </div>
-        <div class="tool-output empty" id="opencode-output">Awaiting results…</div>
-        <div class="files-section" id="opencode-files">
+        <div class="tool-output empty" id="claude-output">Awaiting results…</div>
+        <div class="files-section" id="claude-files">
           <div class="files-title">📎 Generated Files</div>
-          <div class="file-list" id="opencode-file-list"></div>
+          <div class="file-list" id="claude-file-list"></div>
         </div>
         <div class="score-section">
           <div class="score-overall">
-            <div class="score-ring opencode" id="opencode-overall-ring">—</div>
+            <div class="score-ring claude" id="claude-overall-ring">—</div>
             <div class="score-label">
-              <strong id="opencode-overall-label">Overall Score</strong>
-              <span id="opencode-word-count"></span>
+              <strong id="claude-overall-label">Overall Score</strong>
+              <span id="claude-word-count"></span>
             </div>
           </div>
-          <div class="metric-bars" id="opencode-bars"></div>
+          <div class="metric-bars" id="claude-bars"></div>
         </div>
       </div>
     </div>
@@ -495,7 +495,7 @@
       <table class="history-table">
         <thead>
           <tr>
-            <th>#</th><th>Prompt</th><th>Copilot</th><th>OpenCode</th><th>Winner</th><th>Speed Δ</th>
+            <th>#</th><th>Prompt</th><th>Copilot</th><th>Claude</th><th>Winner</th><th>Speed Δ</th>
           </tr>
         </thead>
         <tbody id="history-body"></tbody>
@@ -507,6 +507,53 @@
   <div class="empty-state" id="empty-state">
     <div class="big-icon">🔬</div>
     <p>Upload your agent <strong>.md</strong>, add or generate prompts, then hit <strong>Run Comparison</strong>.</p>
+  </div>
+
+  <!-- ══ Research Mode: multi-trial experiment harness ══ -->
+  <div class="card" id="experiments-card">
+    <div class="card-title">🧪 Research Mode — Multi-Trial Experiment</div>
+    <p style="color:var(--muted); font-size:0.85rem; margin-bottom:16px; max-width:70ch;">
+      Runs every prompt from Step 2 against the selected agents for N trials each, scores every
+      trial, and reports mean / 95% confidence interval per metric plus a paired significance
+      test between agents (Holm-Bonferroni corrected beyond two agents). See
+      <code>docs/methodology.md</code> for the statistical procedure this implements.
+    </p>
+    <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;">
+      <label style="display:flex; flex-direction:column; gap:4px; font-size:0.78rem; color:var(--muted);">
+        Trials per (agent, prompt)
+        <input type="number" id="exp-n-trials" min="1" max="20" value="3"
+          style="width:100px; padding:7px 9px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; color:var(--text);">
+      </label>
+      <div style="display:flex; flex-direction:column; gap:4px; font-size:0.78rem; color:var(--muted);">
+        Agents
+        <div style="display:flex; gap:14px; padding-top:4px;">
+          <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text);">
+            <input type="checkbox" id="exp-agent-copilot" checked> Copilot
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text);">
+            <input type="checkbox" id="exp-agent-claude" checked> Claude Code
+          </label>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="exp-run-btn" onclick="runExperiment()">▶ Run Experiment</button>
+    </div>
+    <div id="exp-status" style="font-size:0.85rem; color:var(--muted); margin-bottom:14px;"></div>
+    <div id="exp-results" style="display:none;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+        <strong id="exp-title" style="font-size:0.9rem;"></strong>
+        <span>
+          <a class="btn btn-secondary" id="exp-export-csv" href="#" target="_blank" style="margin-right:8px; text-decoration:none; font-size:0.8rem; padding:7px 14px;">⬇ CSV</a>
+          <a class="btn btn-secondary" id="exp-export-json" href="#" target="_blank" style="text-decoration:none; font-size:0.8rem; padding:7px 14px;">⬇ JSON</a>
+        </span>
+      </div>
+      <table class="history-table" id="exp-agg-table">
+        <thead>
+          <tr><th>Agent</th><th>Metric</th><th>n</th><th>Mean</th><th>95% CI</th></tr>
+        </thead>
+        <tbody id="exp-agg-body"></tbody>
+      </table>
+      <div id="exp-significance" style="margin-top:16px; font-size:0.83rem;"></div>
+    </div>
   </div>
 
 </main>
@@ -538,7 +585,15 @@
 </div>
 
 <script>
-const API = 'http://localhost:5050/api';
+// Use relative URL when served from Flask, fallback to localhost for direct file open
+const API = (location.protocol === 'file:') ? 'http://localhost:5050/api' : '/api';
+
+/** Escapes text for safe insertion into innerHTML (prevents XSS from prompt/output content). */
+function escHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
 
 /** Wall-clock for agent badges: seconds (one decimal) if ≤60s, else minutes + seconds. */
 function formatAgentDuration(ms) {
@@ -561,6 +616,11 @@ let prompts = [];
 let results = [];
 let currentResultIdx = 0;
 let suggestedAdded = new Set();
+// Repo-context state for the "Attach a Git Repository" panel. Populated by
+// cloneRepo() when that feature is wired up; left null/'' means no repo is
+// attached and system prompts are used as-is (the common path).
+let repoContext = null;
+let repoName = '';
 
 // ── Health check ──────────────────────────────────────────────────────────
 async function checkHealth() {
@@ -571,7 +631,7 @@ async function checkHealth() {
     const t = data.tools || {};
     const parts = [
       t.gh_copilot === 'available' ? 'Copilot ✓' : 'Copilot ✗',
-      t.opencode    === 'available' ? 'OpenCode ✓' : 'OpenCode ✗',
+      t.claude      === 'available' ? 'Claude ✓' : 'Claude ✗',
     ];
     document.getElementById('status-text').textContent = 'Backend — ' + parts.join(' · ');
   } catch {
@@ -581,6 +641,38 @@ async function checkHealth() {
 }
 checkHealth();
 setInterval(checkHealth, 15000);
+
+// ── Step 1 status line ────────────────────────────────────────────────────
+function showStatus(msg, color) {
+  const el = document.getElementById('md-status');
+  el.textContent = msg || '';
+  el.style.color = color || '';
+}
+
+// ── Git repo panel ────────────────────────────────────────────────────────
+function toggleGitPanel() {
+  document.getElementById('git-panel').classList.toggle('open');
+}
+
+function setGitStatus(msg, cls = '') {
+  const el = document.getElementById('git-status');
+  el.textContent = msg;
+  el.className = 'git-status' + (cls ? ' ' + cls : '');
+}
+
+function cloneRepo() {
+  // server.py has no clone endpoint yet, so say so instead of failing silently.
+  setGitStatus('⚠ Attaching a Git repository is not supported by this backend yet.', 'err');
+}
+
+function clearRepo() {
+  repoContext = null;
+  repoName = '';
+  document.getElementById('git-repo-info').style.display = 'none';
+  document.getElementById('repo-context-badge').style.display = 'none';
+  document.getElementById('git-clear-btn').style.display = 'none';
+  setGitStatus('');
+}
 
 // ── Load tab switcher ─────────────────────────────────────────────────────
 function switchLoadTab(tab) {
@@ -810,7 +902,7 @@ async function runComparison() {
       results.push(await res.json());
     } catch (e) {
       const empty = { output:'', error:'Backend error: '+e.message, latency_ms:0, scores:{quality:0,accuracy:0,speed:0,length:0,overall:0,word_count:0} };
-      results.push({ prompt: prompts[i], copilot: empty, opencode: { ...empty } });
+      results.push({ prompt: prompts[i], copilot: empty, claude: { ...empty } });
     }
   }
 
@@ -820,6 +912,99 @@ async function runComparison() {
   renderResults();
   document.getElementById('results-section').style.display = 'block';
   document.getElementById('results-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── Research mode: multi-trial experiment harness ───────────────────────────
+async function runExperiment() {
+  if (prompts.length === 0) {
+    document.getElementById('exp-status').textContent = '⚠ Add at least one prompt in Step 2 first.';
+    return;
+  }
+  const agents = [];
+  if (document.getElementById('exp-agent-copilot').checked) agents.push('copilot');
+  if (document.getElementById('exp-agent-claude').checked) agents.push('claude');
+  if (agents.length === 0) {
+    document.getElementById('exp-status').textContent = '⚠ Select at least one agent.';
+    return;
+  }
+  const nTrials = Math.max(1, parseInt(document.getElementById('exp-n-trials').value, 10) || 1);
+
+  const baseSystem = agentContent;
+  const systemWithRepo = repoContext
+    ? `${baseSystem}\n\n---\n## Repository Code Context\n\nThe following is the source code from the repository "${repoName}".\nUse it as context when answering the user's prompt.\n\n${repoContext}`
+    : baseSystem;
+
+  const runBtn = document.getElementById('exp-run-btn');
+  const statusEl = document.getElementById('exp-status');
+  runBtn.disabled = true;
+  document.getElementById('exp-results').style.display = 'none';
+  statusEl.textContent = `Running ${agents.length} agent(s) × ${prompts.length} prompt(s) × ${nTrials} trial(s)… this can take a while.`;
+
+  try {
+    const body = {
+      name: `comparator-run-${new Date().toISOString()}`,
+      agents,
+      n_trials: nTrials,
+      prompts: prompts.map((p, i) => ({ id: `p${i}`, system_prompt: systemWithRepo, user_prompt: p })),
+    };
+    const res = await fetch(`${API}/experiments`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || res.statusText);
+
+    statusEl.textContent = 'Fetching aggregated results…';
+    const expRes = await fetch(`${API}/experiments/${data.experiment_id}`);
+    const experiment = await expRes.json();
+    if (!expRes.ok || experiment.error) throw new Error(experiment.error || expRes.statusText);
+
+    renderExperimentResults(experiment);
+    statusEl.textContent = `✓ Experiment ${data.experiment_id} complete — ${experiment.trials.length} trials recorded.`;
+  } catch (e) {
+    statusEl.textContent = '⚠ ' + e.message;
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
+function renderExperimentResults(experiment) {
+  document.getElementById('exp-title').textContent = `${experiment.name} — ${experiment.id}`;
+  document.getElementById('exp-export-csv').href = `${API}/experiments/${experiment.id}/export?format=csv`;
+  document.getElementById('exp-export-json').href = `${API}/experiments/${experiment.id}/export?format=json`;
+
+  const aggBody = document.getElementById('exp-agg-body');
+  const rows = [];
+  for (const [agent, metrics] of Object.entries(experiment.aggregates || {})) {
+    for (const [metric, stat] of Object.entries(metrics)) {
+      rows.push(`<tr>
+        <td>${escHtml(agent)}</td>
+        <td>${escHtml(metric)}</td>
+        <td>${stat.n}</td>
+        <td>${stat.mean.toFixed(1)}</td>
+        <td>[${stat.ci95_low.toFixed(1)}, ${stat.ci95_high.toFixed(1)}]</td>
+      </tr>`);
+    }
+  }
+  aggBody.innerHTML = rows.join('') || '<tr><td colspan="5">No aggregate data.</td></tr>';
+
+  const sigEl = document.getElementById('exp-significance');
+  const sig = experiment.significance;
+  if (!sig || !sig.pairs || sig.pairs.length === 0) {
+    sigEl.innerHTML = '<em style="color:var(--muted);">Not enough paired trials for a significance test yet — increase trials per (agent, prompt).</em>';
+  } else if (sig.error) {
+    sigEl.innerHTML = `<em style="color:var(--muted);">${escHtml(sig.error)}</em>`;
+  } else {
+    sigEl.innerHTML = `<strong>Pairwise significance on 'overall' (α=${sig.alpha}):</strong><br>` +
+      sig.pairs.map(p => {
+        const hb = p.holm_bonferroni;
+        const sigTag = hb ? (hb.significant ? '🟢 significant (Holm-Bonferroni corrected)' : '⚪ not significant after correction')
+                           : (p.p_value < sig.alpha ? '🟢 significant' : '⚪ not significant');
+        return `${escHtml(p.agent_a)} vs ${escHtml(p.agent_b)} — ${p.method}, p=${p.p_value.toFixed(4)}, effect size=${p.effect_size.toFixed(2)} — ${sigTag}`;
+      }).join('<br>');
+  }
+
+  document.getElementById('exp-results').style.display = 'block';
 }
 
 // ── Render ────────────────────────────────────────────────────────────────
@@ -852,7 +1037,7 @@ function renderCurrentResult() {
   if (!results[currentResultIdx]) return;
   const r = results[currentResultIdx];
   renderPanel('copilot', r.copilot);
-  renderPanel('opencode', r.opencode);
+  renderPanel('claude', r.claude);
 }
 
 function renderPanel(tool, data) {
@@ -876,10 +1061,16 @@ function renderPanel(tool, data) {
   renderFiles(tool, data.files || []);
 
   const s = data.scores || {};
-  ringEl.textContent = s.overall ?? '—';
-  const grade = (s.overall >= 80) ? '🟢 Excellent' : (s.overall >= 60) ? '🟡 Good' : (s.overall >= 40) ? '🟠 Fair' : '🔴 Poor';
-  labelEl.textContent = `${s.overall ?? 0}/100 — ${grade}`;
-  wcEl.textContent = s.word_count != null ? `${s.word_count} words` : '';
+  if (runFailed(data)) {
+    ringEl.textContent = '✗';
+    labelEl.textContent = 'Run failed — not scored (0/100)';
+    wcEl.textContent = '';
+  } else {
+    ringEl.textContent = s.overall ?? '—';
+    const grade = (s.overall >= 80) ? '🟢 Excellent' : (s.overall >= 60) ? '🟡 Good' : (s.overall >= 40) ? '🟠 Fair' : '🔴 Poor';
+    labelEl.textContent = `${s.overall ?? 0}/100 — ${grade}`;
+    wcEl.textContent = s.word_count != null ? `${s.word_count} words` : '';
+  }
 
   const metrics = [
     { key: 'quality',  label: 'Quality' },
@@ -1106,167 +1297,75 @@ function closeModalDirect() {
   document.getElementById('file-modal').classList.remove('open');
 }
 
+/** A run failed when the backend reported an error (scores are then all 0). */
+function runFailed(data) {
+  return !!(data && (data.error || data.scores?.failed));
+}
+
 function renderWinner() {
   if (!results.length) return;
-  let ct = 0, ot = 0;
+  let ct = 0, lt = 0, cFail = 0, lFail = 0;
   results.forEach(r => {
     ct += r.copilot?.scores?.overall ?? 0;
-    ot += r.opencode?.scores?.overall ?? 0;
+    lt += r.claude?.scores?.overall ?? 0;
+    if (runFailed(r.copilot)) cFail++;
+    if (runFailed(r.claude)) lFail++;
   });
   const n = results.length;
-  const ca = Math.round(ct / n), oa = Math.round(ot / n);
+  const ca = Math.round(ct / n), la = Math.round(lt / n);
   const banner = document.getElementById('winner-banner');
   const nameEl = document.getElementById('winner-name');
   const detailEl = document.getElementById('winner-detail');
   banner.style.display = 'flex';
-  if (Math.abs(ca - oa) <= 3) {
+  const failNote = [
+    cFail ? `Copilot failed ${cFail}/${n}` : '',
+    lFail ? `Claude failed ${lFail}/${n}` : '',
+  ].filter(Boolean).join(' · ');
+  const suffix = failNote ? ` — ⚠ ${failNote} (failed runs score 0)` : '';
+  if (cFail === n && lFail === n) {
+    nameEl.textContent = '⚠ No successful runs';
+    detailEl.textContent = 'Both agents failed on every prompt — check the error shown in each panel.';
+  } else if (Math.abs(ca - la) <= 3) {
     nameEl.textContent = "It's a Tie! 🤝";
-    detailEl.textContent = `Copilot avg: ${ca}/100 · OpenCode avg: ${oa}/100`;
-  } else if (ca > oa) {
+    detailEl.textContent = `Copilot avg: ${ca}/100 · Claude avg: ${la}/100${suffix}`;
+  } else if (ca > la) {
     nameEl.textContent = '🤖 GitHub Copilot CLI wins';
-    detailEl.textContent = `Avg ${ca}/100 vs OpenCode ${oa}/100 — Δ ${ca - oa} pts across ${n} prompt(s)`;
+    detailEl.textContent = `Avg ${ca}/100 vs Claude ${la}/100 — Δ ${ca - la} pts across ${n} prompt(s)${suffix}`;
   } else {
-    nameEl.textContent = '⚙️ OpenCode CLI wins';
-    detailEl.textContent = `Avg ${oa}/100 vs Copilot ${ca}/100 — Δ ${oa - ca} pts across ${n} prompt(s)`;
+    nameEl.textContent = '✳️ Claude Code CLI wins';
+    detailEl.textContent = `Avg ${la}/100 vs Copilot ${ca}/100 — Δ ${la - ca} pts across ${n} prompt(s)${suffix}`;
   }
 }
 
 function renderHistory() {
-  if (!results.length) return;
-  document.getElementById('history-section').style.display = 'block';
-  document.getElementById('history-body').innerHTML = results.map((r, i) => {
-    const cs = r.copilot?.scores?.overall ?? 0;
-    const os = r.opencode?.scores?.overall ?? 0;
-    const delta = (r.opencode?.latency_ms ?? 0) - (r.copilot?.latency_ms ?? 0);
-    const winnerTag = Math.abs(cs - os) <= 3
-      ? `<span class="winner-tag winner-tie">Tie</span>`
-      : cs > os
-        ? `<span class="winner-tag winner-copilot">Copilot</span>`
-        : `<span class="winner-tag winner-opencode">OpenCode</span>`;
-    const speedStr = delta === 0 ? '—'
-      : delta > 0 ? `Copilot +${formatDeltaMs(Math.abs(delta))} faster`
-      : `OpenCode +${formatDeltaMs(Math.abs(delta))} faster`;
-    return `
-      <tr onclick="switchTab(${i})">
-        <td>${i + 1}</td>
-        <td style="max-width:240px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escHtml(r.prompt)}">${escHtml(r.prompt)}</td>
-        <td><strong style="color:var(--copilot)">${cs}</strong></td>
-        <td><strong style="color:var(--opencode)">${os}</strong></td>
-        <td>${winnerTag}</td>
-        <td style="color:var(--muted); font-size:0.76rem;">${speedStr}</td>
-      </tr>`;
+  const section = document.getElementById('history-section');
+  const body = document.getElementById('history-body');
+  if (!results.length) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  const cell = (data) => runFailed(data)
+    ? '<span style="color:var(--danger);">failed</span>'
+    : `${data?.scores?.overall ?? 0}`;
+  body.innerHTML = results.map((r, i) => {
+    const c = r.copilot?.scores?.overall ?? 0, l = r.claude?.scores?.overall ?? 0;
+    const winner = Math.abs(c - l) <= 3
+      ? '<span class="winner-tag winner-tie">Tie</span>'
+      : c > l ? '<span class="winner-tag winner-copilot">Copilot</span>'
+              : '<span class="winner-tag winner-claude">Claude</span>';
+    // Speed Δ only means something when both runs actually completed.
+    let speed = '—';
+    if (!runFailed(r.copilot) && !runFailed(r.claude)) {
+      const d = (r.copilot?.latency_ms ?? 0) - (r.claude?.latency_ms ?? 0);
+      speed = d === 0 ? 'same' : `${d < 0 ? 'Copilot' : 'Claude'} faster by ${formatDeltaMs(Math.abs(d))}`;
+    }
+    return `<tr onclick="switchTab(${i})">
+      <td>${i + 1}</td>
+      <td title="${escHtml(r.prompt)}">${escHtml(r.prompt.length > 60 ? r.prompt.slice(0, 60) + '…' : r.prompt)}</td>
+      <td>${cell(r.copilot)}</td>
+      <td>${cell(r.claude)}</td>
+      <td>${winner}</td>
+      <td>${speed}</td>
+    </tr>`;
   }).join('');
-}
-
-// ── Git repo ──────────────────────────────────────────────────────────────
-let repoToken   = '';
-let repoContext = '';
-let repoName    = '';
-
-function toggleGitPanel() {
-  const panel = document.getElementById('git-panel');
-  panel.classList.toggle('open');
-}
-
-async function cloneRepo() {
-  const url    = document.getElementById('git-url').value.trim();
-  const pat    = document.getElementById('git-pat').value.trim();
-  const branch = document.getElementById('git-branch').value.trim();
-  const subdir = document.getElementById('git-subdir').value.trim();
-
-  if (!url) { setGitStatus('Enter a repository URL first.', ''); return; }
-
-  const btn = document.getElementById('git-clone-btn');
-  btn.disabled = true;
-  btn.textContent = '⏳ Cloning…';
-  setGitStatus('Cloning repository — this may take a moment…', '');
-  document.getElementById('git-repo-info').style.display = 'none';
-
-  try {
-    const res  = await fetch(`${API}/clone-repo`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, pat, branch, subdir })
-    });
-    const data = await res.json();
-
-    if (data.error) {
-      setGitStatus('❌ ' + data.error, 'err');
-      btn.disabled = false; btn.textContent = '⬇ Clone & Load';
-      return;
-    }
-
-    repoToken = data.token;
-    repoName  = data.repo_name;
-
-    // Fetch the actual code context string
-    const ctxRes  = await fetch(`${API}/repo-context`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: repoToken })
-    });
-    const ctxData = await ctxRes.json();
-    if (ctxData.error) {
-      setGitStatus('❌ ' + ctxData.error, 'err');
-      btn.disabled = false; btn.textContent = '⬇ Clone & Load';
-      return;
-    }
-    repoContext = ctxData.code_context;
-
-    // Show info card
-    document.getElementById('git-repo-info').style.display = 'block';
-    document.getElementById('ri-repo').textContent   = data.repo_name;
-    document.getElementById('ri-branch').textContent = data.branch;
-    document.getElementById('ri-files').textContent  = `${data.file_count} source file(s)`;
-    document.getElementById('ri-size').textContent   = `~${Math.round(data.size_chars / 1000)} KB of code`;
-    document.getElementById('git-tree').textContent  = data.tree_preview;
-
-    setGitStatus(`✅ Loaded ${data.file_count} files from ${data.repo_name}`, 'ok');
-    document.getElementById('git-clear-btn').style.display = 'inline-flex';
-    btn.disabled = false;
-    btn.textContent = '🔄 Re-clone';
-
-    // Show badge above prompts
-    document.getElementById('repo-context-badge').style.display = 'inline-flex';
-    document.getElementById('repo-badge-text').textContent =
-      `${data.repo_name} @ ${data.branch} — ${data.file_count} files`;
-
-  } catch(e) {
-    setGitStatus('❌ ' + e.message, 'err');
-    btn.disabled = false;
-    btn.textContent = '⬇ Clone & Load';
-  }
-}
-
-async function clearRepo() {
-  if (repoToken) {
-    fetch(`${API}/repo-cleanup`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: repoToken })
-    }).catch(() => {});
-  }
-  repoToken   = '';
-  repoContext = '';
-  repoName    = '';
-  document.getElementById('git-repo-info').style.display = 'none';
-  document.getElementById('git-clear-btn').style.display = 'none';
-  document.getElementById('repo-context-badge').style.display = 'none';
-  document.getElementById('git-clone-btn').textContent = '⬇ Clone & Load';
-  setGitStatus('Repo cleared.', '');
-}
-
-function setGitStatus(msg, cls) {
-  const el = document.getElementById('git-status');
-  el.textContent = msg;
-  el.className = 'git-status' + (cls ? ' ' + cls : '');
-}
-
-// ── Utils ─────────────────────────────────────────────────────────────────
-function showStatus(msg, color) {
-  const el = document.getElementById('md-status');
-  el.textContent = msg;
-  el.style.color = color;
-}
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
 </body>

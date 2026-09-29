@@ -1,6 +1,6 @@
 """
 Agent Output Comparator - Flask Backend
-Runs prompts against GitHub Copilot CLI and OpenCode CLI,
+Runs prompts against GitHub Copilot CLI and Claude Code CLI,
 measures latency, and scores outputs across 4 metrics.
 """
 
@@ -13,11 +13,32 @@ import subprocess
 import time
 from pathlib import Path
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request, send_file, send_from_directory
 from flask_cors import CORS
 
-app = Flask(__name__)
-CORS(app)
+from source.evalkit.experiment.config import ExperimentConfig
+from source.evalkit.experiment.runner import run_experiment
+from source.evalkit.experiment.storage import ResultStore
+from source.evalkit.metrics.aggregate import default_scorer
+from source.evalkit.reporting.export import experiment_to_csv, experiment_to_json
+from source.evalkit.stats.aggregate_stats import summarize
+from source.evalkit.stats.significance import all_pairs_significance
+
+# Serve index.html and static assets from the same folder as server.py
+BASE_DIR = Path(__file__).parent.resolve()
+app = Flask(__name__, static_folder=str(BASE_DIR), static_url_path="")
+# Only the comparator's own page may call the API cross-origin. An open CORS policy would let
+# any website open in the same browser read local files via /api/read-file or start agent runs.
+_PORT = int(os.environ.get("PORT", "5050"))
+CORS(app, origins=[f"http://localhost:{_PORT}", f"http://127.0.0.1:{_PORT}"])
+
+EMPTY_ANSWER_ERROR = "Empty response: the CLI finished without returning any answer text."
+
+
+@app.route("/")
+def index():
+    """Serve the frontend at http://localhost:5050"""
+    return send_from_directory(str(BASE_DIR), "index.html")
 
 # ---------------------------------------------------------------------------
 # CLI invocation helpers
@@ -47,12 +68,13 @@ def _copilot_effective_cwd(copilot_cwd_request: str | None = None) -> str:
     return home if os.path.isdir(home) else os.getcwd()
 
 
-def _copilot_subprocess_timeout_sec() -> int:
+def _subprocess_timeout_sec(env_var: str = "COMPARE_COPILOT_TIMEOUT_SEC") -> int:
     """
-    Max wall-clock time for one Copilot CLI run.
-    Agent + tools often exceeds 120s; override with COMPARE_COPILOT_TIMEOUT_SEC (30–3600).
+    Max wall-clock time for one agent CLI run.
+    Agent + tools often exceeds 120s; override with ``env_var``
+    (COMPARE_COPILOT_TIMEOUT_SEC / COMPARE_CLAUDE_TIMEOUT_SEC, 30–3600).
     """
-    raw = os.environ.get("COMPARE_COPILOT_TIMEOUT_SEC", "").strip()
+    raw = os.environ.get(env_var, "").strip()
     default = 600
     if not raw:
         return default
@@ -69,6 +91,21 @@ _COPILOT_FILEGEN_HINT_RE = re.compile(
 )
 
 
+def _combined_agent_prompt(system_prompt: str, user_prompt: str) -> str:
+    """The exact prompt text every agent receives, so comparisons stay like-for-like."""
+    combined = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
+    if _COPILOT_FILEGEN_HINT_RE.search(user_prompt) or (
+        system_prompt and _COPILOT_FILEGEN_HINT_RE.search(system_prompt)
+    ):
+        combined += (
+            "\n\n---\n[Comparator]\n"
+            "If this task requires artifacts on disk, use your file tools to write them "
+            "under the CLI working directory. Do not only describe paths or file contents "
+            "in prose—create the actual files so they can be opened from disk.\n"
+        )
+    return combined
+
+
 def _run_copilot_with_file(exe: str, prompt_file: str, cwd_override: str | None = None) -> dict:
     """
     Run copilot.exe with the prompt read from a file, avoiding all shell quoting issues.
@@ -83,7 +120,7 @@ def _run_copilot_with_file(exe: str, prompt_file: str, cwd_override: str | None 
     env["TERM"] = "dumb"
     env.setdefault("CI", "true")
     cli_cwd = _copilot_effective_cwd(cwd_override)
-    timeout_sec = _copilot_subprocess_timeout_sec()
+    timeout_sec = _subprocess_timeout_sec("COMPARE_COPILOT_TIMEOUT_SEC")
 
     try:
         with open(prompt_file, "r", encoding="utf-8") as fh:
@@ -166,16 +203,7 @@ def run_copilot_cli(
     prompts that contain quotes, newlines, or special characters.
     """
     import tempfile
-    combined = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
-    if _COPILOT_FILEGEN_HINT_RE.search(user_prompt) or (
-        system_prompt and _COPILOT_FILEGEN_HINT_RE.search(system_prompt)
-    ):
-        combined += (
-            "\n\n---\n[Comparator]\n"
-            "If this task requires artifacts on disk, use your file tools to write them "
-            "under the CLI working directory. Do not only describe paths or file contents "
-            "in prose—create the actual files so they can be opened from disk.\n"
-        )
+    combined = _combined_agent_prompt(system_prompt, user_prompt)
 
     # Write prompt to temp file — avoids shell quoting issues
     tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt",
@@ -199,8 +227,41 @@ def run_copilot_cli(
         pass
 
     if result.get("output"):
-        result["output"] = _clean_copilot_json_output(result["output"])
+        raw = result["output"]
+        result["output"] = _clean_copilot_json_output(raw)
+        # Exit code 0 with only an error event on stdout (e.g. auth failure) is a failed
+        # run, not an answer — surface it as an error so it isn't scored.
+        err = _jsonl_error_without_answer(raw)
+        if err:
+            result["output"] = ""
+            result["error"] = err
     return result
+
+
+def _jsonl_error_without_answer(text: str) -> str | None:
+    """
+    Return the error message from a JSONL agent log that contains an error event
+    (``type`` == "error" or ending in ".error") but no ``assistant.message`` answer.
+    """
+    error_msg = None
+    for line in text.splitlines():
+        try:
+            obj = json.loads(line.strip())
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        etype = str(obj.get("type", ""))
+        if etype == "assistant.message":
+            content = (obj.get("data") or {}).get("content")
+            if isinstance(content, str) and content.strip():
+                return None
+        elif etype == "error" or etype.endswith(".error"):
+            err = obj.get("error") or obj.get("data") or obj.get("message")
+            if isinstance(err, dict):
+                err = err.get("message") or (err.get("data") or {}).get("message") or json.dumps(err)
+            error_msg = str(err or etype)
+    return error_msg
 
 
 def _find_copilot_binary() -> str:
@@ -226,7 +287,9 @@ def _find_copilot_binary() -> str:
     for path in candidates:
         if path and os.path.exists(path):
             return path
-    return ""
+    # Fall back to PATH, which is also what a run uses when none of the above exist.
+    import shutil
+    return shutil.which("copilot") or ""
 
 
 def _clean_copilot_output(text: str) -> str:
@@ -325,179 +388,130 @@ def _clean_copilot_json_output(text: str) -> str:
 
 
 
-# Relative paths (under app / compare project) tried when resolving a spec file
-_OPENCODE_DEFAULT_SPEC_FILES: tuple[str, ...] = (
-    "openspec.md",
-    "OPEN_SPEC.md",
-    "open-spec.md",
-    "opencode.spec.md",
-    "SPEC.md",
-    "spec.md",
-    "specification.md",
-    "docs/specification.md",
-    "docs/architecture/overview.md",
-    ".opencode/spec.md",
-    "openapi.yaml",
-    "openapi.yml",
-)
-
-
-def _resolve_opencode_spec_file(project: Path, hint: str | None) -> Path | None:
+def _claude_permission_mode() -> str:
     """
-    Pick a specification file for OpenCode agents that expect `localSpecPath`.
-    hint may be absolute, or relative to project; env COMPARE_OPENCODE_SPEC is a fallback.
+    Claude Code ``--permission-mode`` for comparator runs.
+    Default ``acceptEdits`` lets it write files in the working folder (parity with
+    Copilot's file tools) without allowing unattended shell commands.
+    Override with COMPARE_CLAUDE_PERMISSION_MODE (e.g. ``bypassPermissions``).
     """
-    raw = (hint or "").strip() or os.environ.get("COMPARE_OPENCODE_SPEC", "").strip()
-    if raw:
-        p = Path(raw)
-        if p.is_file():
-            return p.resolve()
-        rel = project / raw
-        if rel.is_file():
-            return rel.resolve()
-        return None
-    for name in _OPENCODE_DEFAULT_SPEC_FILES:
-        cand = project / name
-        if cand.is_file():
-            return cand.resolve()
-    return None
+    allowed = {"acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"}
+    mode = os.environ.get("COMPARE_CLAUDE_PERMISSION_MODE", "").strip()
+    return mode if mode in allowed else "acceptEdits"
 
 
-def _opencode_context_prefix(project_abs: str, spec: Path | None) -> str:
-    """Inject paths so models/tools do not ask for localSpecPath interactively."""
-    lines = [
-        "[Comparator context] Project root (absolute): " + project_abs,
-    ]
-    if spec is not None:
-        sp = str(spec.resolve())
-        lines.append(
-            "[Comparator context] Specification file `localSpecPath` (absolute): " + sp
-        )
-    else:
-        lines.append(
-            "[Comparator context] No specification file was auto-detected under the project; "
-            "if you require `localSpecPath`, use the project root above or paths beneath it."
-        )
-    return "\n".join(lines) + "\n\n"
-
-
-def _clean_opencode_output(text: str) -> str:
-    """
-    OpenCode --format json emits JSONL (one JSON object per line).
-    Each line has a "type" field. We extract text from lines where:
-      type == "text" and part.text contains the assistant response.
-
-    Example line:
-      {"type":"text", "part": {"type":"text", "text": "You can use..."}}
-    """
-    import json
-    lines = text.strip().splitlines()
-    parts = []
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-            if isinstance(obj, dict) and obj.get("type") == "text":
-                part = obj.get("part", {})
-                t = part.get("text", "")
-                if t and t.strip():
-                    parts.append(t.strip())
-        except (json.JSONDecodeError, ValueError):
-            parts.append(line)
-
-    result = "\n".join(parts).strip()
-    return result if result else text.strip()
-
-
-def run_opencode_cli(
+def run_claude_cli(
     system_prompt: str,
     user_prompt: str,
     *,
-    local_spec_path: str | None = None,
+    cwd: str | None = None,
 ) -> dict:
     """
-    Invoke OpenCode CLI v1.14+.
-    Writes the prompt to a temp file and passes it via stdin redirect
-    to avoid Windows shell quoting issues with spaces and special chars.
-
-    Uses ``opencode run --dir <app>`` so the project config loads, optional ``--file``
-    for a spec, and a short context prefix so agents receive an absolute ``localSpecPath``.
+    Invoke Claude Code CLI in print mode: ``claude -p --output-format json``.
+    The prompt is fed via stdin (no shell quoting, no command-line length limit)
+    and is built exactly like the Copilot prompt so both agents get the same input.
     """
-    import tempfile
-    project = _app_directory()
-    proj_abs = str(project.resolve())
-    spec = _resolve_opencode_spec_file(project, local_spec_path)
-    prefix = _opencode_context_prefix(proj_abs, spec)
-    combined = prefix + (f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt)
+    start = time.perf_counter()
+    env = os.environ.copy()
+    env["NO_COLOR"] = "1"
+    env["FORCE_COLOR"] = "0"
+    env["TERM"] = "dumb"
+    # Claude Code refuses to start when it thinks it is nested inside another
+    # Claude Code session (e.g. when this server was launched from one).
+    env.pop("CLAUDECODE", None)
+    env.pop("CLAUDE_CODE_ENTRYPOINT", None)
 
-    # Write prompt to a temp file — avoids all shell quoting issues
-    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".txt",
-                                      delete=False, encoding="utf-8")
-    tmp.write(combined)
-    tmp.close()
-    tmp_path = tmp.name
+    cli_cwd = _copilot_effective_cwd(cwd)
+    timeout_sec = _subprocess_timeout_sec("COMPARE_CLAUDE_TIMEOUT_SEC")
+    exe = _find_claude_binary() or "claude"
+    cmd = [
+        exe,
+        "-p",
+        "--output-format",
+        "json",
+        "--no-session-persistence",
+        "--permission-mode",
+        _claude_permission_mode(),
+    ]
+    model = os.environ.get("COMPARE_CLAUDE_MODEL", "").strip()
+    if model:
+        cmd += ["--model", model]
 
-    opencode_bin = _find_opencode_binary()
-    file_arg = ""
-    if spec is not None:
-        file_arg = f' --file "{str(spec.resolve())}"'
-    # --dir: run with project root (loads .opencode / local agents); --file attaches spec
-    cmd = (
-        f'"{opencode_bin}" run --dir "{proj_abs}"{file_arg} '
-        f'--dangerously-skip-permissions --format json < "{tmp_path}"'
-    )
-
-    result = _run_shell("OpenCode CLI", cmd, timeout_sec=600)
-
-    # Clean up temp file
+    base = {"tool": "Claude Code CLI", "working_directory": cli_cwd}
     try:
-        os.unlink(tmp_path)
-    except Exception:
-        pass
+        proc = subprocess.run(
+            cmd,
+            shell=False,
+            input=_combined_agent_prompt(system_prompt, user_prompt),
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            cwd=cli_cwd,
+        )
+    except FileNotFoundError:
+        return {**base, "output": "", "latency_ms": int((time.perf_counter() - start) * 1000),
+                "error": "'claude' not found. Install Claude Code CLI and make sure it is on PATH."}
+    except subprocess.TimeoutExpired:
+        return {**base, "output": "", "latency_ms": int((time.perf_counter() - start) * 1000),
+                "error": f"Timed out after {timeout_sec} seconds. "
+                         f"Set COMPARE_CLAUDE_TIMEOUT_SEC (e.g. 900) to allow longer runs."}
+    except Exception as exc:
+        return {**base, "output": "", "latency_ms": int((time.perf_counter() - start) * 1000),
+                "error": str(exc)}
 
-    if result.get("output"):
-        result["output"] = _clean_opencode_output(result["output"])
+    latency_ms = int((time.perf_counter() - start) * 1000)
+    stdout = (proc.stdout or "").strip()
+    stderr = (proc.stderr or "").strip()
 
-    result["opencode_project_dir"] = proj_abs
-    if spec is not None:
-        result["local_spec_path"] = str(spec.resolve())
+    try:
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError):
+        payload = None
 
-    return result
+    if not isinstance(payload, dict):
+        # Not the expected single JSON result — treat as plain text / failure.
+        if proc.returncode != 0 or not stdout:
+            return {**base, "output": "", "latency_ms": latency_ms,
+                    "error": stderr or stdout or f"Exit code {proc.returncode}"}
+        return {**base, "output": stdout, "error": None, "latency_ms": latency_ms}
+
+    text = payload.get("result")
+    text = text.strip() if isinstance(text, str) else ""
+    meta = {
+        "model": ", ".join((payload.get("modelUsage") or {}).keys()) or None,
+        "num_turns": payload.get("num_turns"),
+        "total_cost_usd": payload.get("total_cost_usd"),
+    }
+    if payload.get("is_error") or payload.get("subtype") not in (None, "success"):
+        # e.g. {"is_error": true, "result": "Not logged in · Please run /login"}
+        return {**base, **meta, "output": "", "latency_ms": latency_ms,
+                "error": text or str(payload.get("subtype") or "Claude Code reported an error")}
+    return {**base, **meta, "output": text, "error": None, "latency_ms": latency_ms}
 
 
-def _find_opencode_binary() -> str:
+def _find_claude_binary() -> str:
     """
-    Resolve full path to opencode binary.
-    Checks common Windows npm install locations so Python subprocess
-    can find it even when PATH differs from the shell.
+    Resolve the Claude Code CLI executable (PATH first, then common install locations).
+    Returns an empty string when it cannot be found.
     """
     import shutil
-    # First try: let shutil find it via PATH (works if PATH is inherited)
-    found = shutil.which("opencode")
+    found = shutil.which("claude")
     if found:
         return found
-
-    # Fallback: check common npm global install locations on Windows
     user_profile = os.environ.get("USERPROFILE", "")
     app_data = os.environ.get("APPDATA", "")
     candidates = [
-        # Confirmed path: C:\Users\a949557\AppData\Roaming\npm\opencode.cmd
-        # APPDATA already points to AppData\Roaming on Windows
-        os.path.join(app_data, "npm", "opencode.cmd"),
-        os.path.join(app_data, "npm", "opencode"),
-        os.path.join(user_profile, "node_modules", ".bin", "opencode.cmd"),
-        os.path.join(user_profile, "node_modules", ".bin", "opencode"),
-        r"C:\Program Files\nodejs\opencode.cmd",
-        r"C:\Program Files\nodejs\opencode",
+        os.path.join(user_profile, ".local", "bin", "claude.exe"),
+        os.path.join(app_data, "npm", "claude.cmd"),
+        os.path.join(user_profile, "node_modules", ".bin", "claude.cmd"),
     ]
     for path in candidates:
-        if os.path.exists(path):
+        if path and os.path.exists(path):
             return path
-
-    # Last resort: return bare name and let it fail with a clear error
-    return "opencode"
+    return ""
 
 
 def _run_cli(name: str, cmd: list) -> dict:
@@ -698,102 +712,46 @@ def _run_cli_input(name: str, cmd: list) -> dict:
 # ---------------------------------------------------------------------------
 # Scoring engine
 # ---------------------------------------------------------------------------
+#
+# Scoring is delegated to evalkit.metrics.AggregateScorer (see
+# source/evalkit/metrics/ and docs/methodology.md for metric definitions,
+# weighting rationale, and validation methodology). score_for_ui() adapts
+# the framework's namespaced metric output into the flat
+# {quality, accuracy, speed, length, overall, word_count} shape the existing
+# UI renders, so the frontend didn't need to change.
 
-def score_output(output: str, prompt: str, system_prompt: str, latency_ms: int, peer_latency_ms: int) -> dict:
-    """
-    Score a single output across 4 dimensions (0-100 each).
+_UI_SCORER = default_scorer()
 
-    Quality     – length, structure, paragraph/list use, no truncation
-    Accuracy    – keyword overlap between prompt keywords and output
-    Speed       – relative latency vs peer (faster = higher score)
-    Length fit  – penalise very short or excessively long responses
-    """
-    if not output:
-        return {"quality": 0, "accuracy": 0, "speed": 0, "length": 0, "overall": 0}
 
-    words = output.split()
-    word_count = len(words)
-
-    # --- Quality (0-100) ---
-    quality = 0
-    # Has meaningful length
-    if word_count >= 10:
-        quality += 20
-    if word_count >= 30:
-        quality += 15
-    # Has structured content (lists, code blocks, headers)
-    if re.search(r"(^[-*•]\s|\d+\.\s|```|#{1,3}\s)", output, re.MULTILINE):
-        quality += 20
-    # Multiple sentences / paragraphs
-    sentences = re.split(r"[.!?]\s+", output)
-    if len(sentences) >= 3:
-        quality += 15
-    # No error-like phrases
-    error_phrases = ["error:", "not found", "command not found", "traceback", "exception"]
-    if not any(p in output.lower() for p in error_phrases):
-        quality += 15
-    # Not truncated (doesn't end mid-word or with "...")
-    if not output.rstrip().endswith(("...", "…")):
-        quality += 15
-    quality = min(quality, 100)
-
-    # --- Accuracy (0-100): keyword overlap ---
-    # Extract significant words from prompt + system_prompt
-    stop_words = {
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "shall",
-        "should", "may", "might", "must", "can", "could", "to", "of", "in",
-        "for", "on", "with", "at", "by", "from", "as", "into", "through",
-        "and", "or", "but", "if", "then", "so", "yet", "nor", "not", "no",
-        "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us",
-        "them", "my", "your", "his", "its", "our", "their", "this", "that",
-        "these", "those", "what", "how", "when", "where", "why", "which", "who",
-    }
-    combined_input = f"{system_prompt} {prompt}".lower()
-    input_words = set(re.findall(r"\b[a-z]{4,}\b", combined_input)) - stop_words
-    output_lower = output.lower()
-    output_word_set = set(re.findall(r"\b[a-z]{4,}\b", output_lower)) - stop_words
-
-    if input_words:
-        overlap = len(input_words & output_word_set) / len(input_words)
-        accuracy = min(int(overlap * 160), 100)  # scale up — full overlap rare
+def score_for_ui(
+    output: str,
+    prompt: str,
+    system_prompt: str,
+    latency_ms: int,
+    peer_latency_ms: int,
+    error: str | None = None,
+) -> dict:
+    """``error`` set → the run failed; every score is 0 and ``failed`` is True.
+    Pass ``peer_latency_ms=0`` when the peer failed so its latency isn't used."""
+    if error:
+        result = _UI_SCORER.failed_result(error)
     else:
-        accuracy = 50  # neutral if no keywords to compare
-
-    # --- Speed (0-100): relative comparison ---
-    # When equal, both get 70. Faster tool scales up to 100, slower down to 40.
-    if peer_latency_ms == 0 or latency_ms == 0:
-        speed = 70  # neutral if we can't compare
-    else:
-        ratio = latency_ms / max(peer_latency_ms, 1)
-        # ratio < 1 → faster (score > 70), ratio > 1 → slower (score < 70)
-        speed = int(70 + 30 * (1 - ratio))
-        speed = max(20, min(speed, 100))
-
-    # --- Length fit (0-100) ---
-    # Ideal range: 30-400 words
-    if word_count < 5:
-        length_score = 10
-    elif word_count < 15:
-        length_score = 40
-    elif word_count < 30:
-        length_score = 65
-    elif word_count <= 400:
-        length_score = 100
-    elif word_count <= 700:
-        length_score = 80
-    else:
-        length_score = 60
-
-    overall = int((quality * 0.35) + (accuracy * 0.35) + (speed * 0.15) + (length_score * 0.15))
-
+        result = _UI_SCORER.score(
+            output=output,
+            prompt=prompt,
+            system_prompt=system_prompt,
+            latency_ms=latency_ms,
+            peer_latencies_ms=[peer_latency_ms] if peer_latency_ms else [],
+        )
     return {
-        "quality": quality,
-        "accuracy": accuracy,
-        "speed": speed,
-        "length": length_score,
-        "word_count": word_count,
-        "overall": overall,
+        "failed": result["failed"],
+        "quality": round(result["quality"]["score"]),
+        "accuracy": round(result["semantic_accuracy"]["score"]),
+        "speed": round(result["efficiency"]["score"]),
+        "length": round(result["length_fit"]["score"]),
+        "word_count": result["word_count"],
+        "overall": round(result["overall"]),
+        "metrics_detail": result,
     }
 
 
@@ -981,66 +939,172 @@ def compare():
     Run a prompt against both CLIs and return scored comparison.
     Body: {
       "system_prompt": str, "user_prompt": str,
-      "local_spec_path" | "localSpecPath": optional absolute or project-relative spec file
-      "copilot_cwd" | "copilot_working_directory": optional folder where Copilot tools write files
+      "copilot_cwd" | "copilot_working_directory": optional folder where both agents'
+          file tools write (same folder for both so the comparison is fair)
     }
     """
     data = request.json or {}
     system_prompt = data.get("system_prompt", "").strip()
     user_prompt = data.get("user_prompt", "").strip()
-    spec_hint = (
-        data.get("local_spec_path")
-        or data.get("localSpecPath")
-        or ""
-    )
-    if isinstance(spec_hint, str):
-        spec_hint = spec_hint.strip()
-    else:
-        spec_hint = ""
 
-    cop_cwd_req = data.get("copilot_cwd") or data.get("copilot_working_directory") or ""
-    cop_cwd_req = cop_cwd_req.strip() if isinstance(cop_cwd_req, str) else ""
+    cwd_req = data.get("copilot_cwd") or data.get("copilot_working_directory") or ""
+    cwd_req = cwd_req.strip() if isinstance(cwd_req, str) else ""
 
     if not user_prompt:
         return jsonify({"error": "user_prompt is required."}), 400
 
     # Run both CLIs (sequentially to avoid interfering with each other's timing)
     copilot_result = run_copilot_cli(
-        system_prompt, user_prompt, copilot_cwd=cop_cwd_req or None
+        system_prompt, user_prompt, copilot_cwd=cwd_req or None
     )
-    opencode_result = run_opencode_cli(
-        system_prompt, user_prompt, local_spec_path=spec_hint or None
-    )
+    claude_result = run_claude_cli(system_prompt, user_prompt, cwd=cwd_req or None)
+    # A run that returns no answer text is a failure, not a (very short) answer.
+    for result in (copilot_result, claude_result):
+        if not result.get("error") and not (result.get("output") or "").strip():
+            result["error"] = EMPTY_ANSWER_ERROR
 
-    # Score outputs
-    copilot_scores = score_output(
+    # Score outputs. A failed run scores 0 and is not used as the other's latency peer.
+    def peer_latency(peer: dict) -> int:
+        return 0 if peer.get("error") else peer["latency_ms"]
+
+    copilot_scores = score_for_ui(
         copilot_result["output"],
         user_prompt,
         system_prompt,
         copilot_result["latency_ms"],
-        opencode_result["latency_ms"],
+        peer_latency(claude_result),
+        error=copilot_result.get("error"),
     )
-    opencode_scores = score_output(
-        opencode_result["output"],
+    claude_scores = score_for_ui(
+        claude_result["output"],
         user_prompt,
         system_prompt,
-        opencode_result["latency_ms"],
-        copilot_result["latency_ms"],
+        claude_result["latency_ms"],
+        peer_latency(copilot_result),
+        error=claude_result.get("error"),
     )
 
     # Extract any file paths mentioned or created in the output
-    cop_cwd = copilot_result.get("working_directory")
-    copilot_files = _extract_file_paths(
-        copilot_result.get("output", ""),
-        cli_working_dir=cop_cwd if isinstance(cop_cwd, str) and cop_cwd.strip() else None,
-    )
-    opencode_files = _extract_file_paths(opencode_result.get("output", ""))
+    def files_for(result: dict) -> list:
+        wd = result.get("working_directory")
+        return _extract_file_paths(
+            result.get("output", ""),
+            cli_working_dir=wd if isinstance(wd, str) and wd.strip() else None,
+        )
 
     return jsonify({
         "prompt": user_prompt,
-        "copilot":  {**copilot_result,  "scores": copilot_scores,  "files": copilot_files},
-        "opencode": {**opencode_result, "scores": opencode_scores, "files": opencode_files},
+        "copilot": {**copilot_result, "scores": copilot_scores, "files": files_for(copilot_result)},
+        "claude":  {**claude_result,  "scores": claude_scores,  "files": files_for(claude_result)},
     })
+
+
+# ---------------------------------------------------------------------------
+# Experiment harness API (evalkit) — multi-trial, statistically-backed runs
+# ---------------------------------------------------------------------------
+
+def _experiment_aggregates(experiment: dict) -> dict:
+    """Per (agent, metric) mean/stdev/95% CI, plus pairwise significance on
+    'overall' scores (Wilcoxon by default) when >=2 agents ran, with
+    Holm-Bonferroni correction applied once there are more than two agents
+    (see docs/methodology.md Section 6/8 on why the correction matters).
+    """
+    by_agent_metric: dict[str, dict[str, list[float]]] = {}
+    for trial in experiment["trials"]:
+        agent = trial["agent"]
+        by_agent_metric.setdefault(agent, {})
+        for metric_key, metric_val in trial["scores"].items():
+            if metric_key == "overall":
+                values = by_agent_metric[agent].setdefault("overall", [])
+                values.append(metric_val)
+            elif isinstance(metric_val, dict) and "score" in metric_val:
+                values = by_agent_metric[agent].setdefault(metric_key, [])
+                values.append(metric_val["score"])
+
+    aggregates = {
+        # Every metric score (and overall) is on a 0-100 scale; keep the CI inside it.
+        agent: {metric: summarize(values, bounds=(0.0, 100.0)) for metric, values in metrics.items()}
+        for agent, metrics in by_agent_metric.items()
+    }
+
+    significance = None
+    overall_by_agent = {
+        agent: metrics["overall"] for agent, metrics in by_agent_metric.items() if "overall" in metrics
+    }
+    lengths = {len(v) for v in overall_by_agent.values()}
+    if len(overall_by_agent) >= 2 and len(lengths) == 1 and next(iter(lengths)) >= 2:
+        try:
+            significance = all_pairs_significance(overall_by_agent)
+        except (ImportError, ValueError) as exc:
+            significance = {"error": str(exc)}
+
+    return {"aggregates": aggregates, "significance": significance}
+
+
+@app.route("/api/experiments", methods=["POST"])
+def create_experiment():
+    """
+    Run a config-driven multi-trial experiment: agents x prompts x n_trials.
+    Body (ExperimentConfig-shaped):
+    {
+      "name": str, "agents": ["copilot", "claude"],
+      "prompts": [{"id": str, "system_prompt": str, "user_prompt": str}, ...],
+      "n_trials": int, "agent_kwargs": {"copilot": {...}, "claude": {...}}
+    }
+    """
+    data = request.json or {}
+    try:
+        config = ExperimentConfig.from_dict(data)
+    except (ValueError, KeyError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    try:
+        experiment_id = run_experiment(config)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({"experiment_id": experiment_id})
+
+
+@app.route("/api/experiments/<experiment_id>", methods=["GET"])
+def get_experiment(experiment_id: str):
+    """Aggregated stats (mean/stdev/95% CI per agent+metric) and, when
+    exactly two agents were compared, a paired significance test."""
+    store = ResultStore()
+    experiment = store.get_experiment(experiment_id)
+    if experiment is None:
+        return jsonify({"error": f"Experiment not found: {experiment_id}"}), 404
+
+    return jsonify({**experiment, **_experiment_aggregates(experiment)})
+
+
+@app.route("/api/experiments/<experiment_id>/export", methods=["GET"])
+def export_experiment(experiment_id: str):
+    """Export raw trial rows as CSV or JSON for external analysis. ?format=csv|json"""
+    store = ResultStore()
+    experiment = store.get_experiment(experiment_id)
+    if experiment is None:
+        return jsonify({"error": f"Experiment not found: {experiment_id}"}), 404
+
+    fmt = (request.args.get("format") or "json").strip().lower()
+    if fmt == "csv":
+        body = experiment_to_csv(experiment)
+        return Response(
+            body,
+            mimetype="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{experiment_id}.csv"'},
+        )
+    return Response(
+        experiment_to_json(experiment),
+        mimetype="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{experiment_id}.json"'},
+    )
+
+
+@app.route("/api/experiments", methods=["GET"])
+def list_experiments():
+    store = ResultStore()
+    return jsonify({"experiments": store.list_experiments()})
 
 
 def _app_directory() -> Path:
@@ -1230,6 +1294,13 @@ def _resolve_path(
     return raw, False
 
 
+_QUOTED_PATH_RE = re.compile(r'["\']([\w./\\-]+\.[A-Za-z0-9]{1,8})["\']')
+_BARE_PATH_RE = re.compile(
+    r"(?im)^[\s\-*>]*([\w./\\-]+\."
+    r"(?:md|py|js|ts|tsx|jsx|json|yaml|yml|txt|mmd|html|css|sql|sh|bat|ps1|toml|cfg|ini))\s*$"
+)
+
+
 def _extract_file_paths(output: str, cli_working_dir: str | None = None) -> list:
     """
     Scan CLI output for file paths that were created/modified.
@@ -1245,314 +1316,108 @@ def _extract_file_paths(output: str, cli_working_dir: str | None = None) -> list
     extra = [cli_working_dir] if cli_working_dir else None
 
     def add(path):
-        path = path.strip().strip('"').strip("'").replace("\\\\", "/").replace("\\", "/")
-        if path in seen or len(path) < 3:
+        path = path.strip().strip("'\"")
+        if not path or path in seen:
             return
         seen.add(path)
         resolved, exists = _resolve_path(path, extra_bases=extra)
-        name = Path(resolved).name or path.split("/")[-1]
-        ext  = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-        entry: dict = {"path": resolved, "name": name, "ext": ext, "exists": exists}
-        if cli_working_dir and str(cli_working_dir).strip():
-            entry["resolve_base"] = cli_working_dir.strip()
+        entry = {
+            "path": path,
+            "name": Path(path).name,
+            "ext": Path(path).suffix.lstrip("."),
+            "exists": exists,
+        }
+        if exists and resolved != path:
+            entry["resolve_base"] = str(Path(resolved).parent)
         found.append(entry)
 
-    # 1. Try JSON in output (opencode style)
-    json_match = re.search(r'\{[\s\S]*"filesCreated"[\s\S]*\}', output)
-    if json_match:
+    # 1. JSON blocks with filesCreated / outputPath arrays
+    for match in re.finditer(r"\{[^{}]*\}", output):
         try:
-            obj = _json.loads(json_match.group(0))
-            for p in obj.get("filesCreated", []):
-                add(p)
-            op = obj.get("outputPath", "")
-            if op and op != "/":
-                add(op)
-        except Exception:
-            pass
+            obj = _json.loads(match.group(0))
+        except (_json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        for key in ("filesCreated", "files_created", "outputPath", "output_path", "files"):
+            val = obj.get(key)
+            if isinstance(val, str):
+                add(val)
+            elif isinstance(val, list):
+                for item in val:
+                    if isinstance(item, str):
+                        add(item)
+                    elif isinstance(item, dict) and isinstance(item.get("path"), str):
+                        add(item["path"])
 
-    # 2. Regex: quoted paths with file extensions
-    for m in re.finditer(r'["\']([^"\']+\.[a-zA-Z]{1,6})["\']', output):
-        add(m.group(1))
+    # 2. Quoted paths like "docs/architecture/overview.md"
+    for match in _QUOTED_PATH_RE.finditer(output):
+        add(match.group(1))
 
-    # 3. Bare paths like docs/architecture/overview.md
-    for m in re.finditer(r'(?<!\w)([\w./\\-]+/[\w./\\-]+\.(?:md|mmd|json|yaml|yml|ts|js|py|txt|html|svg|png|pdf))', output):
-        add(m.group(1))
+    # 3. Bare paths on their own line (e.g. bullet-listed file names)
+    for match in _BARE_PATH_RE.finditer(output):
+        add(match.group(1))
 
     return found
 
 
-def _read_resolve_bases(data: dict) -> list[str] | None:
-    """Optional bases from client (same run as /api/compare) for relative paths."""
-    rb = (data.get("resolve_base") or data.get("working_directory") or "").strip()
-    return [rb] if rb else None
+@app.route("/api/health")
+def health():
+    """Reports whether each CLI binary is resolvable, for the UI's status dot."""
+    copilot_available = bool(_find_copilot_binary())
+    claude_available = bool(_find_claude_binary())
+    return jsonify({
+        "status": "ok",
+        "tools": {
+            "gh_copilot": "available" if copilot_available else "unavailable",
+            "claude": "available" if claude_available else "unavailable",
+        },
+    })
 
 
 @app.route("/api/read-file", methods=["POST"])
 def read_file():
-    """Read a generated file for preview. Body: { path: str, resolve_base?: str }"""
+    """Read a file (produced by a CLI run) for preview in the UI."""
     data = request.json or {}
-    fpath = data.get("path", "").strip()
-    if not fpath:
-        return jsonify({"error": "No path provided"}), 400
-    resolved, exists = _resolve_path(fpath, extra_bases=_read_resolve_bases(data))
-    p = Path(resolved)
-    if not exists or not p.is_file():
-        return jsonify({"error": f"File not found: {fpath}"}), 404
+    raw_path = (data.get("path") or "").strip()
+    resolve_base = (data.get("resolve_base") or "").strip()
+
+    if not raw_path:
+        return jsonify({"error": "No file path provided."}), 400
+
+    extra_bases = [resolve_base] if resolve_base else None
+    resolved, exists = _resolve_path(raw_path, extra_bases=extra_bases)
+    if not exists:
+        return jsonify({"error": f"File not found: {raw_path}"}), 404
+
+    path = Path(resolved)
     try:
-        content = p.read_text(encoding="utf-8", errors="replace")
-        size = p.stat().st_size
-        return jsonify({"content": content, "name": p.name, "size": size,
-                        "ext": p.suffix.lstrip(".").lower()})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        content = path.read_text(encoding="utf-8", errors="replace")
+        return jsonify({"content": content, "ext": path.suffix.lstrip("."), "name": path.name})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/api/download-file", methods=["POST"])
 def download_file():
-    """Download a generated file. Body: { path: str, resolve_base?: str }"""
-    from flask import send_file
+    """Download a file (produced by a CLI run) as an attachment."""
     data = request.json or {}
-    fpath = data.get("path", "").strip()
-    if not fpath:
-        return jsonify({"error": "No path provided"}), 400
-    resolved, exists = _resolve_path(fpath, extra_bases=_read_resolve_bases(data))
-    p = Path(resolved)
-    if not exists or not p.is_file():
-        return jsonify({"error": f"File not found: {fpath}"}), 404
-    return send_file(str(p.resolve()), as_attachment=True, download_name=p.name)
+    raw_path = (data.get("path") or "").strip()
+    resolve_base = (data.get("resolve_base") or "").strip()
+    download_name = (data.get("name") or "").strip()
 
+    if not raw_path:
+        return jsonify({"error": "No file path provided."}), 400
 
-# ---------------------------------------------------------------------------
-# Git repo helpers
-# ---------------------------------------------------------------------------
+    extra_bases = [resolve_base] if resolve_base else None
+    resolved, exists = _resolve_path(raw_path, extra_bases=extra_bases)
+    if not exists:
+        return jsonify({"error": f"File not found: {raw_path}"}), 404
 
-# Track active cloned repos so we can clean them up
-_cloned_repos: dict[str, str] = {}   # token → temp_dir path
-
-
-def _build_auth_url(repo_url: str, pat: str) -> str:
-    """Embed PAT into a GitHub HTTPS URL for authenticated clone."""
-    # https://github.com/org/repo  →  https://<pat>@github.com/org/repo
-    if repo_url.startswith("https://"):
-        return repo_url.replace("https://", f"https://{pat}@", 1)
-    return repo_url
-
-
-def _collect_repo_code(repo_dir: str, max_chars: int = 120_000) -> str:
-    """
-    Walk the cloned repo and concatenate file contents into one context string.
-    Skips binary files, .git folder, node_modules, common build artefacts.
-    Stops once max_chars is reached to avoid overwhelming the CLI.
-    """
-    SKIP_DIRS  = {".git", "node_modules", "__pycache__", ".venv", "venv",
-                  "dist", "build", ".next", ".nuxt", "target", "vendor"}
-    TEXT_EXTS  = {
-        ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".cs", ".go",
-        ".rb", ".php", ".rs", ".cpp", ".c", ".h", ".hpp",
-        ".html", ".css", ".scss", ".json", ".yaml", ".yml",
-        ".md", ".txt", ".sh", ".bat", ".ps1", ".sql",
-        ".tf", ".toml", ".ini", ".env.example", ".dockerfile",
-        "dockerfile",
-    }
-    MAX_FILE_CHARS = 8_000   # cap per individual file
-
-    chunks = []
-    total  = 0
-    root   = Path(repo_dir)
-
-    for fpath in sorted(root.rglob("*")):
-        if total >= max_chars:
-            chunks.append("\n\n[... context limit reached — remaining files omitted ...]")
-            break
-        # Skip directories and hidden/build folders
-        if fpath.is_dir():
-            continue
-        parts = set(fpath.parts)
-        if parts & SKIP_DIRS:
-            continue
-        # Only include text-ish files
-        ext = fpath.suffix.lower()
-        name_lower = fpath.name.lower()
-        if ext not in TEXT_EXTS and name_lower not in TEXT_EXTS:
-            continue
-
-        rel = fpath.relative_to(root)
-        try:
-            text = fpath.read_text(encoding="utf-8", errors="replace")
-        except Exception:
-            continue
-
-        if len(text) > MAX_FILE_CHARS:
-            text = text[:MAX_FILE_CHARS] + "\n[... file truncated ...]"
-
-        chunk = f"\n\n### FILE: {rel}\n```{ext.lstrip('.')}\n{text}\n```"
-        chunks.append(chunk)
-        total += len(chunk)
-
-    if not chunks:
-        return "(no readable source files found in repository)"
-
-    return "".join(chunks)
-
-
-@app.route("/api/clone-repo", methods=["POST"])
-def clone_repo():
-    """
-    Clone a GitHub HTTPS repo and return repo metadata + file tree summary.
-    Body: { url, pat, branch?, subdir? }
-    Returns: { token, repo_name, branch, file_count, size_chars, tree_preview }
-    """
-    import tempfile, shutil, uuid
-
-    data       = request.json or {}
-    repo_url   = (data.get("url") or "").strip().rstrip("/")
-    pat        = (data.get("pat") or "").strip()
-    branch     = (data.get("branch") or "").strip() or None
-    subdir     = (data.get("subdir") or "").strip().strip("/") or None
-
-    if not repo_url:
-        return jsonify({"error": "repo_url is required"}), 400
-    if not repo_url.startswith("https://github.com/"):
-        return jsonify({"error": "Only GitHub HTTPS URLs are supported (https://github.com/...)"}), 400
-
-    auth_url = _build_auth_url(repo_url, pat) if pat else repo_url
-    tmp_dir  = tempfile.mkdtemp(prefix="aoc_repo_")
-
-    try:
-        clone_cmd = ["git", "clone", "--depth", "1", "--single-branch"]
-        if branch:
-            clone_cmd += ["--branch", branch]
-        clone_cmd += [auth_url, tmp_dir]
-
-        proc = subprocess.run(
-            clone_cmd,
-            capture_output=True, text=True,
-            timeout=120, encoding="utf-8", errors="replace",
-        )
-        if proc.returncode != 0:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-            err = proc.stderr.strip()
-            # Scrub PAT from error message before returning
-            if pat:
-                err = err.replace(pat, "***")
-            return jsonify({"error": f"git clone failed: {err}"}), 400
-
-        # Narrow to subdir if requested
-        work_dir = tmp_dir
-        if subdir:
-            candidate = Path(tmp_dir) / subdir
-            if candidate.is_dir():
-                work_dir = str(candidate)
-            else:
-                return jsonify({"error": f"Subdir '{subdir}' not found in repo"}), 400
-
-        # Collect readable source files
-        code_context = _collect_repo_code(work_dir)
-        file_count   = code_context.count("### FILE:")
-        size_chars   = len(code_context)
-
-        # Build a short tree preview (first 40 files)
-        root = Path(work_dir)
-        tree_lines = []
-        for i, f in enumerate(sorted(root.rglob("*"))):
-            if f.is_file() and ".git" not in f.parts:
-                tree_lines.append(str(f.relative_to(root)))
-            if len(tree_lines) >= 40:
-                tree_lines.append("… (more files)")
-                break
-        tree_preview = "\n".join(tree_lines)
-
-        # Detect actual branch
-        head = Path(tmp_dir) / ".git" / "HEAD"
-        actual_branch = branch or "main"
-        if head.exists():
-            head_text = head.read_text(encoding="utf-8", errors="replace").strip()
-            if head_text.startswith("ref: refs/heads/"):
-                actual_branch = head_text.replace("ref: refs/heads/", "")
-
-        repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
-
-        # Store the code context keyed by a token so /api/compare can use it
-        token = str(uuid.uuid4())
-        _cloned_repos[token] = {
-            "dir": tmp_dir,
-            "code_context": code_context,
-            "repo_name": repo_name,
-            "branch": actual_branch,
-        }
-
-        return jsonify({
-            "token":        token,
-            "repo_name":    repo_name,
-            "branch":       actual_branch,
-            "file_count":   file_count,
-            "size_chars":   size_chars,
-            "tree_preview": tree_preview,
-        })
-
-    except subprocess.TimeoutExpired:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        return jsonify({"error": "git clone timed out (120 s)"}), 504
-    except Exception as exc:
-        import shutil as _sh
-        _sh.rmtree(tmp_dir, ignore_errors=True)
-        return jsonify({"error": str(exc)}), 500
-
-
-@app.route("/api/repo-context", methods=["POST"])
-def repo_context():
-    """
-    Return the collected code context string for a previously cloned repo.
-    Body: { token }
-    """
-    data  = request.json or {}
-    token = (data.get("token") or "").strip()
-    if not token or token not in _cloned_repos:
-        return jsonify({"error": "Invalid or expired repo token. Clone again."}), 404
-    info = _cloned_repos[token]
-    return jsonify({
-        "code_context": info["code_context"],
-        "repo_name":    info["repo_name"],
-        "branch":       info["branch"],
-    })
-
-
-@app.route("/api/repo-cleanup", methods=["POST"])
-def repo_cleanup():
-    """Remove a cloned repo temp directory. Body: { token }"""
-    import shutil
-    data  = request.json or {}
-    token = (data.get("token") or "").strip()
-    if token in _cloned_repos:
-        shutil.rmtree(_cloned_repos[token]["dir"], ignore_errors=True)
-        del _cloned_repos[token]
-    return jsonify({"ok": True})
-
-
-@app.route("/api/health", methods=["GET"])
-def health():
-    """Health check — also checks if CLIs are on PATH."""
-    tools = {}
-    copilot_bin = _find_copilot_binary()
-    opencode_bin = _find_opencode_binary()
-    cop_ver = f'"{copilot_bin}" --version' if copilot_bin else "copilot --version"
-    opc_ver = f'"{opencode_bin}" --version'
-
-    for tool, cmd in [("gh_copilot", cop_ver), ("opencode", opc_ver)]:
-        try:
-            proc = subprocess.run(cmd, shell=True, capture_output=True,
-                                  text=True, timeout=10,
-                                  encoding="utf-8", errors="replace")
-            tools[tool] = "available" if proc.returncode == 0 else f"error (exit {proc.returncode})"
-        except Exception as e:
-            tools[tool] = f"error: {e}"
-
-    return jsonify({"status": "ok", "tools": tools})
+    path = Path(resolved)
+    return send_file(str(path), as_attachment=True, download_name=download_name or path.name)
 
 
 if __name__ == "__main__":
-    print("=" * 55)
-    print("  Agent Output Comparator — Backend")
-    print("  Running at http://localhost:5050")
-    print("=" * 55)
-    app.run(host="0.0.0.0", port=5050, debug=False)
+    port = int(os.environ.get("PORT", "5050"))
+    app.run(host="127.0.0.1", port=port, debug=False)
